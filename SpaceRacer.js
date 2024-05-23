@@ -3,7 +3,71 @@ import {defs, tiny} from './examples/common.js';
 const {
     Vector, Vector3, vec, vec3, vec4, color, hex_color, Shader, Matrix, Mat4, Light, Shape, Material, Scene,
 } = tiny;
-
+// COLLISION DETECTION CLASS
+export class Body {
+    // **Body** can store and update the properties of a 3D body that incrementally
+    // moves from its previous place due to velocities.  It conforms to the
+    // approach outlined in the "Fix Your Timestep!" blog post by Glenn Fiedler.
+    constructor(shape, material, size) {
+      Object.assign(this, { shape, material, size })
+    }
+  
+    // To check if a collision occurs, we could use either intersect_cube or
+    //intersect_sphere, depend on the shape of an targeted object
+    //These two methods check if a point is inside a cube or a sphere so that
+    //we can determine whether a collision happen or not.
+    //we use margin to allow some flexibility as these methods are not perfectly accurate
+    static intersect_cube(p, margin = 0) {
+      return p.every((value) => value >= -1 - margin && value <= 1 + margin)
+    }
+  
+    static intersect_sphere(p, margin = 0) {
+      return p.dot(p) < 1 + margin
+    }
+  
+    emplace(
+      location_matrix,
+      linear_velocity,
+      angular_velocity,
+      spin_axis = vec3(0, 0, 0).randomized(1).normalized()
+    ) {
+      // emplace(): assign the body's initial values, or overwrite them.
+      this.center = location_matrix.times(vec4(0, 0, 0, 1)).to3()
+      this.rotation = Mat4.translation(...this.center.times(-1)).times(
+        location_matrix
+      )
+      this.previous = {
+        center: this.center.copy(),
+        rotation: this.rotation.copy(),
+      }
+      // drawn_location gets replaced with an interpolated quantity:
+      this.drawn_location = location_matrix
+      this.temp_matrix = Mat4.identity()
+      return Object.assign(this, { linear_velocity, angular_velocity, spin_axis })
+    }
+  
+    check_if_colliding(b, collider) {
+      // check_if_colliding(): Collision detection function.
+      // DISCLAIMER:  The collision method shown below is not used by anyone; it's just very quick
+      // to code.  Making every collision body an ellipsoid is kind of a hack, and looping
+      // through a list of discrete sphere points to see if the ellipsoids intersect is *really* a
+      // hack (there are perfectly good analytic expressions that can test if two ellipsoids
+      // intersect without discretizing them into points).
+      if (this == b) return false
+      // Nothing collides with itself.
+      // Convert sphere b to the frame where a is a unit sphere:
+      const T = this.inverse.times(b.drawn_location, this.temp_matrix)
+  
+      const { intersect_test, points, leeway } = collider
+      // For each vertex in that b, shift to the coordinate frame of
+      // a_inv*b.  Check if in that coordinate frame it penetrates
+      // the unit sphere at the origin.  Leave some leeway.
+      return points.arrays.position.some((p) =>
+        intersect_test(T.times(p.to4(1)).to3(), leeway)
+      )
+    }
+  }
+  
 export class SpaceRacer extends Scene {
     constructor() {
         super();
