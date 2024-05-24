@@ -4,6 +4,132 @@ const {
     Vector, Vector3, vec, vec3, vec4, color, hex_color, Shader, Matrix, Mat4, Light, Shape, Material, Scene,
 } = tiny;
 
+export class Shape_From_File extends Shape {
+    // **Shape_From_File** is a versatile standalone Shape that imports
+    // all its arrays' data from an .obj 3D model file.
+    constructor(filename) {
+      super('position', 'normal', 'texture_coord')
+      // Begin downloading the mesh. Once that completes, return
+      // control to our parse_into_mesh function.
+      this.load_file(filename)
+    }
+  
+    load_file(filename) {
+      // Request the external file and wait for it to load.
+      // Failure mode:  Loads an empty shape.
+      return fetch(filename)
+        .then((response) => {
+          if (response.ok) return Promise.resolve(response.text())
+          else return Promise.reject(response.status)
+        })
+        .then((obj_file_contents) => this.parse_into_mesh(obj_file_contents))
+        .catch((error) => {
+          this.copy_onto_graphics_card(this.gl)
+        })
+    }
+  
+    parse_into_mesh(data) {
+      // Adapted from the "webgl-obj-loader.js" library found online:
+      var verts = [],
+        vertNormals = [],
+        textures = [],
+        unpacked = {}
+  
+      unpacked.verts = []
+      unpacked.norms = []
+      unpacked.textures = []
+      unpacked.hashindices = {}
+      unpacked.indices = []
+      unpacked.index = 0
+  
+      var lines = data.split('\n')
+  
+      var VERTEX_RE = /^v\s/
+      var NORMAL_RE = /^vn\s/
+      var TEXTURE_RE = /^vt\s/
+      var FACE_RE = /^f\s/
+      var WHITESPACE_RE = /\s+/
+  
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim()
+        var elements = line.split(WHITESPACE_RE)
+        elements.shift()
+  
+        if (VERTEX_RE.test(line)) verts.push.apply(verts, elements)
+        else if (NORMAL_RE.test(line))
+          vertNormals.push.apply(vertNormals, elements)
+        else if (TEXTURE_RE.test(line)) textures.push.apply(textures, elements)
+        else if (FACE_RE.test(line)) {
+          var quad = false
+          for (var j = 0, eleLen = elements.length; j < eleLen; j++) {
+            if (j === 3 && !quad) {
+              j = 2
+              quad = true
+            }
+            if (elements[j] in unpacked.hashindices)
+              unpacked.indices.push(unpacked.hashindices[elements[j]])
+            else {
+              var vertex = elements[j].split('/')
+  
+              unpacked.verts.push(+verts[(vertex[0] - 1) * 3 + 0])
+              unpacked.verts.push(+verts[(vertex[0] - 1) * 3 + 1])
+              unpacked.verts.push(+verts[(vertex[0] - 1) * 3 + 2])
+  
+              if (textures.length) {
+                unpacked.textures.push(
+                  +textures[(vertex[1] - 1 || vertex[0]) * 2 + 0]
+                )
+                unpacked.textures.push(
+                  +textures[(vertex[1] - 1 || vertex[0]) * 2 + 1]
+                )
+              }
+  
+              unpacked.norms.push(
+                +vertNormals[(vertex[2] - 1 || vertex[0]) * 3 + 0]
+              )
+              unpacked.norms.push(
+                +vertNormals[(vertex[2] - 1 || vertex[0]) * 3 + 1]
+              )
+              unpacked.norms.push(
+                +vertNormals[(vertex[2] - 1 || vertex[0]) * 3 + 2]
+              )
+  
+              unpacked.hashindices[elements[j]] = unpacked.index
+              unpacked.indices.push(unpacked.index)
+              unpacked.index += 1
+            }
+            if (j === 3 && quad)
+              unpacked.indices.push(unpacked.hashindices[elements[0]])
+          }
+        }
+      }
+      {
+        const { verts, norms, textures } = unpacked
+        for (var j = 0; j < verts.length / 3; j++) {
+          this.arrays.position.push(
+            vec3(verts[3 * j], verts[3 * j + 1], verts[3 * j + 2])
+          )
+          this.arrays.normal.push(
+            vec3(norms[3 * j], norms[3 * j + 1], norms[3 * j + 2])
+          )
+          this.arrays.texture_coord.push(
+            vec(textures[2 * j], textures[2 * j + 1])
+          )
+        }
+        this.indices = unpacked.indices
+      }
+      this.normalize_positions(false)
+      this.ready = true
+    }
+  
+    draw(context, program_state, model_transform, material) {
+      // draw(): Same as always for shapes, but cancel all
+      // attempts to draw the shape before it loads:
+      if (this.ready)
+        super.draw(context, program_state, model_transform, material)
+    }
+  }
+
 export class SpaceRacer extends Scene {
     constructor() {
         // constructor(): Scenes begin by populating initial values like the Shapes and Materials they'll need.
@@ -11,11 +137,27 @@ export class SpaceRacer extends Scene {
 
         // At the beginning of our program, load one of each of these shape definitions onto the GPU.
         this.shapes = {
+            sun: new defs.Subdivision_Sphere(4),
+            disk: new defs.Torus(100, 100),
+            black: new defs.Torus(100, 100),
+            obstacle: new (defs.Subdivision_Sphere.prototype.make_flat_shaded_version())(2),
+            UFO: new Shape_From_File('assets/UFO.obj'),
+            
         };
 
         // *** Materials
         this.materials = {
-
+            sun: new Material(new defs.Phong_Shader(),
+            {ambient: 1}),
+            disk: new Material(new defs.Phong_Shader(),
+            {ambient: 1, diffusivity: 1, color: hex_color("#9df8f6"),specularity: 1}),
+            black: new Material(new defs.Phong_Shader(),
+            {ambient: 0, diffusivity: 0, color: hex_color("#FF0000"),specularity: 0}),
+            obstacle: new Material(new defs.Phong_Shader(),
+            {ambient: 1, diffusivity: 1, color: hex_color("#808080"), specularity: 1}),
+            UFO: new Material(new defs.Phong_Shader(),
+            {ambient: 1, diffusivity: 1,color: hex_color("#808080"), specularity: 1}),
+            
         }
 
         this.initial_camera_location = Mat4.look_at(vec3(0, 10, 20), vec3(0, 0, 0), vec3(0, 1, 0));
@@ -25,9 +167,35 @@ export class SpaceRacer extends Scene {
         // Draw the scene's buttons, setup their actions and keyboard shortcuts, and monitor live measurements.
     }
 
+    getRandomInt(max) {
+        return Math.floor(Math.random() * max);
+      }
+
+    generate_obstacles(context,program_state,number){
+            let obs_transform = Mat4.identity();
+            obs_transform = obs_transform.times(Mat4.translation(7.5, 7.5, 0));
+            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+            obs_transform = obs_transform.times(Mat4.translation(-9,1, 0));
+            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+            obs_transform = obs_transform.times(Mat4.translation(-6,-3, 0));
+            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+            obs_transform = obs_transform.times(Mat4.translation(0,-5, 0));
+            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+            obs_transform = obs_transform.times(Mat4.translation(-2,-5, 0));
+            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+            obs_transform = obs_transform.times(Mat4.translation(5,-6, 0));
+            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+            obs_transform = obs_transform.times(Mat4.translation(5,0, 0));
+            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+            obs_transform = obs_transform.times(Mat4.translation(3,5, 0));
+            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+            obs_transform = obs_transform.times(Mat4.translation(6,5, 0));
+            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+    }
     display(context, program_state) {
         // display():  Called once per frame of animation.
         // Setup -- This part sets up the scene's overall camera matrix, projection matrix, and lights:
+        const pi = Math.PI
         if (!context.scratchpad.controls) {
             this.children.push(context.scratchpad.controls = new defs.Movement_Controls());
             // Define the global camera and projection matrices, which are stored in program_state.
@@ -41,9 +209,42 @@ export class SpaceRacer extends Scene {
         
 
         const t = program_state.animation_time / 1000, dt = program_state.animation_delta_time / 1000;
+        let model_transform = Mat4.identity();
+        let sun_transform = model_transform;
+        
+        var sun_radius = 3;
+        sun_transform = sun_transform.times(Mat4.scale(sun_radius, sun_radius, sun_radius));
+        // let r = Math.sin(Math.PI * t) * 127 + 128;
+        // let g = Math.sin(Math.PI * t + 2 * Math.PI / 3) * 127 + 128;
+        // let b = Math.sin(Math.PI * t + 2 * Math.PI * 2 / 3) * 127 + 128;
+        var sun_color = color(1, 1, 1, 1);
 
+        let disk_transform = model_transform;
+
+        disk_transform = disk_transform.times(Mat4.scale(23, 23, 1)); 
+
+        let black_transform = model_transform;
+
+        black_transform = model_transform.times(Mat4.scale(28, 28, 1.3)); 
+        
+        // let UFO_transform = model_transform;
+
+        // // UFO_transform = UFO_transform.times(Mat4.scale(0.5,0.5,0.5))
+        // //                             .times(Mat4.translation(15,0, 0).times(Mat4.rotation(pi/2, 0, 1, 0)));
+
+        // UFO_transform = UFO_transform.times(Mat4.rotation(Math.PI / 2, 0, 1, 0));
+
+
+        const light_position = vec4(0, 0, 0, 1);
+        program_state.lights = [new Light(light_position, sun_color, 150 ** sun_radius)];
+        this.shapes.sun.draw(context, program_state, sun_transform, this.materials.sun.override({color: sun_color}));
+        this.shapes.disk.draw(context, program_state, disk_transform, this.materials.disk);
+        this.shapes.black.draw(context, program_state, black_transform, this.materials.black);
+        this.generate_obstacles(context,program_state,5);
+        // this.shapes.UFO.draw(context, program_state, UFO_transform, this.materials.UFO);
     }
 }
+
 
 class Gouraud_Shader extends Shader {
     // This is a Shader using Phong_Shader as template
@@ -241,4 +442,6 @@ class Ring_Shader extends Shader {
         }`;
     }
 }
+
+
 
