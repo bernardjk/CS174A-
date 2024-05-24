@@ -13,7 +13,7 @@ export class Shape_From_File extends Shape {
       // control to our parse_into_mesh function.
       this.load_file(filename)
     }
-  
+
     load_file(filename) {
       // Request the external file and wait for it to load.
       // Failure mode:  Loads an empty shape.
@@ -27,34 +27,34 @@ export class Shape_From_File extends Shape {
           this.copy_onto_graphics_card(this.gl)
         })
     }
-  
+
     parse_into_mesh(data) {
       // Adapted from the "webgl-obj-loader.js" library found online:
       var verts = [],
         vertNormals = [],
         textures = [],
         unpacked = {}
-  
+
       unpacked.verts = []
       unpacked.norms = []
       unpacked.textures = []
       unpacked.hashindices = {}
       unpacked.indices = []
       unpacked.index = 0
-  
+
       var lines = data.split('\n')
-  
+
       var VERTEX_RE = /^v\s/
       var NORMAL_RE = /^vn\s/
       var TEXTURE_RE = /^vt\s/
       var FACE_RE = /^f\s/
       var WHITESPACE_RE = /\s+/
-  
+
       for (var i = 0; i < lines.length; i++) {
         var line = lines[i].trim()
         var elements = line.split(WHITESPACE_RE)
         elements.shift()
-  
+
         if (VERTEX_RE.test(line)) verts.push.apply(verts, elements)
         else if (NORMAL_RE.test(line))
           vertNormals.push.apply(vertNormals, elements)
@@ -70,11 +70,11 @@ export class Shape_From_File extends Shape {
               unpacked.indices.push(unpacked.hashindices[elements[j]])
             else {
               var vertex = elements[j].split('/')
-  
+
               unpacked.verts.push(+verts[(vertex[0] - 1) * 3 + 0])
               unpacked.verts.push(+verts[(vertex[0] - 1) * 3 + 1])
               unpacked.verts.push(+verts[(vertex[0] - 1) * 3 + 2])
-  
+
               if (textures.length) {
                 unpacked.textures.push(
                   +textures[(vertex[1] - 1 || vertex[0]) * 2 + 0]
@@ -83,7 +83,7 @@ export class Shape_From_File extends Shape {
                   +textures[(vertex[1] - 1 || vertex[0]) * 2 + 1]
                 )
               }
-  
+
               unpacked.norms.push(
                 +vertNormals[(vertex[2] - 1 || vertex[0]) * 3 + 0]
               )
@@ -93,7 +93,7 @@ export class Shape_From_File extends Shape {
               unpacked.norms.push(
                 +vertNormals[(vertex[2] - 1 || vertex[0]) * 3 + 2]
               )
-  
+
               unpacked.hashindices[elements[j]] = unpacked.index
               unpacked.indices.push(unpacked.index)
               unpacked.index += 1
@@ -121,7 +121,7 @@ export class Shape_From_File extends Shape {
       this.normalize_positions(false)
       this.ready = true
     }
-  
+
     draw(context, program_state, model_transform, material) {
       // draw(): Same as always for shapes, but cancel all
       // attempts to draw the shape before it loads:
@@ -132,118 +132,150 @@ export class Shape_From_File extends Shape {
 
 export class SpaceRacer extends Scene {
     constructor() {
-        // constructor(): Scenes begin by populating initial values like the Shapes and Materials they'll need.
         super();
 
-        // At the beginning of our program, load one of each of these shape definitions onto the GPU.
         this.shapes = {
             sun: new defs.Subdivision_Sphere(4),
             disk: new defs.Torus(100, 100),
             black: new defs.Torus(100, 100),
             obstacle: new (defs.Subdivision_Sphere.prototype.make_flat_shaded_version())(2),
             UFO: new Shape_From_File('assets/UFO.obj'),
-            
+            car: new defs.Cube()
         };
 
-        // *** Materials
         this.materials = {
-            sun: new Material(new defs.Phong_Shader(),
-            {ambient: 1}),
-            disk: new Material(new defs.Phong_Shader(),
-            {ambient: 1, diffusivity: 1, color: hex_color("#9df8f6"),specularity: 1}),
-            black: new Material(new defs.Phong_Shader(),
-            {ambient: 0, diffusivity: 0, color: hex_color("#FF0000"),specularity: 0}),
-            obstacle: new Material(new defs.Phong_Shader(),
-            {ambient: 1, diffusivity: 1, color: hex_color("#808080"), specularity: 1}),
-            UFO: new Material(new defs.Phong_Shader(),
-            {ambient: 1, diffusivity: 1,color: hex_color("#808080"), specularity: 1}),
-            
-        }
+            sun: new Material(new defs.Phong_Shader(), {ambient: 1}),
+            disk: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 1, color: hex_color("#9df8f6"), specularity: 1}),
+            black: new Material(new defs.Phong_Shader(), {ambient: 0, diffusivity: 0, color: hex_color("#FF0000"), specularity: 0}),
+            obstacle: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 1, color: hex_color("#808080"), specularity: 1}),
+            UFO: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 1, color: hex_color("#808080"), specularity: 1}),
+            car: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 0.5, specularity: 0.5, color: hex_color("#FF0000")})
+        };
 
         this.initial_camera_location = Mat4.look_at(vec3(0, 0, 20), vec3(0, 0, 0), vec3(0, 1, 0));
+
+        this.car_transform = Mat4.translation(0, 0, 0.5).times(Mat4.rotation(Math.PI / 2, 1, 0, 0)).times(Mat4.scale(0.2, 0.2, 0.2)); // Scale the car down
+        this.key_states = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
+        this.velocity = 0;
+        this.acceleration = 0.025;
+        this.deceleration = 0.025;
+        this.max_speed = 1;
+
+        this.third_person = false;  // Flag for third-person camera mode
     }
 
     make_control_panel() {
-        // Draw the scene's buttons, setup their actions and keyboard shortcuts, and monitor live measurements.
+        this.key_triggered_button("Move Forward", ["ArrowUp"], () => this.key_states.ArrowUp = true, undefined, () => this.key_states.ArrowUp = false);
+        this.key_triggered_button("Move Backward", ["ArrowDown"], () => this.key_states.ArrowDown = true, undefined, () => this.key_states.ArrowDown = false);
+        this.key_triggered_button("Turn Left", ["ArrowLeft"], () => this.key_states.ArrowLeft = true, undefined, () => this.key_states.ArrowLeft = false);
+        this.key_triggered_button("Turn Right", ["ArrowRight"], () => this.key_states.ArrowRight = true, undefined, () => this.key_states.ArrowRight = false);
+        this.key_triggered_button("Toggle Camera", ["c"], () => this.third_person = !this.third_person);  // Camera toggle button
     }
 
     getRandomInt(max) {
         return Math.floor(Math.random() * max);
-      }
-
-    generate_obstacles(context,program_state,number){
-            let obs_transform = Mat4.identity();
-            obs_transform = obs_transform.times(Mat4.translation(7.5, 7.5, 0));
-            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
-            obs_transform = obs_transform.times(Mat4.translation(-9,1, 0));
-            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
-            obs_transform = obs_transform.times(Mat4.translation(-6,-3, 0));
-            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
-            obs_transform = obs_transform.times(Mat4.translation(0,-5, 0));
-            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
-            obs_transform = obs_transform.times(Mat4.translation(-2,-5, 0));
-            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
-            obs_transform = obs_transform.times(Mat4.translation(5,-6, 0));
-            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
-            obs_transform = obs_transform.times(Mat4.translation(5,0, 0));
-            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
-            obs_transform = obs_transform.times(Mat4.translation(3,5, 0));
-            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
-            obs_transform = obs_transform.times(Mat4.translation(6,5, 0));
-            this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
     }
+
+    generate_obstacles(context, program_state, number) {
+        let obs_transform = Mat4.identity();
+        obs_transform = obs_transform.times(Mat4.translation(7.5, 7.5, 0));
+        this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+        obs_transform = obs_transform.times(Mat4.translation(-9, 1, 0));
+        this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+        obs_transform = obs_transform.times(Mat4.translation(-6, -3, 0));
+        this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+        obs_transform = obs_transform.times(Mat4.translation(0, -5, 0));
+        this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+        obs_transform = obs_transform.times(Mat4.translation(-2, -5, 0));
+        this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+        obs_transform = obs_transform.times(Mat4.translation(5, -6, 0));
+        this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+        obs_transform = obs_transform.times(Mat4.translation(5, 0, 0));
+        this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+        obs_transform = obs_transform.times(Mat4.translation(3, 5, 0));
+        this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+        obs_transform = obs_transform.times(Mat4.translation(6, 5, 0));
+        this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
+    }
+
     display(context, program_state) {
-        // display():  Called once per frame of animation.
-        // Setup -- This part sets up the scene's overall camera matrix, projection matrix, and lights:
-        const pi = Math.PI
+        const pi = Math.PI;
         if (!context.scratchpad.controls) {
             this.children.push(context.scratchpad.controls = new defs.Movement_Controls());
-            // Define the global camera and projection matrices, which are stored in program_state.
             program_state.set_camera(this.initial_camera_location);
         }
 
-        // TODO: Create Planets (Requirement 1)
-        // this.shapes.[XXX].draw([XXX]) // <--example
-        program_state.projection_transform = Mat4.perspective(
-            Math.PI / 4, context.width / context.height, .1, 1000);
-        
+        program_state.projection_transform = Mat4.perspective(Math.PI / 4, context.width / context.height, .1, 1000);
 
         const t = program_state.animation_time / 1000, dt = program_state.animation_delta_time / 1000;
         let model_transform = Mat4.identity();
         let sun_transform = model_transform;
-        
+
         var sun_radius = 3;
         sun_transform = sun_transform.times(Mat4.scale(sun_radius, sun_radius, sun_radius));
-        // let r = Math.sin(Math.PI * t) * 127 + 128;
-        // let g = Math.sin(Math.PI * t + 2 * Math.PI / 3) * 127 + 128;
-        // let b = Math.sin(Math.PI * t + 2 * Math.PI * 2 / 3) * 127 + 128;
         var sun_color = color(1, 1, 1, 1);
 
         let disk_transform = model_transform;
-
-        disk_transform = disk_transform.times(Mat4.scale(23, 23, 1)); 
+        disk_transform = disk_transform.times(Mat4.scale(23, 23, 1));
 
         let black_transform = model_transform;
+        black_transform = model_transform.times(Mat4.scale(28, 28, 1.3));
 
-        black_transform = model_transform.times(Mat4.scale(28, 28, 1.3)); 
-        
         let UFO_transform = model_transform;
+        UFO_transform = UFO_transform.times(Mat4.translation(8, -4, 0.5)).times(Mat4.rotation(Math.PI / 2, Math.PI / 2, 0, 0)).times(Mat4.scale(0.2, 0.2, 0.2));
 
-        // // UFO_transform = UFO_transform.times(Mat4.scale(0.5,0.5,0.5))
-        // //                             .times(Mat4.translation(15,0, 0).times(Mat4.rotation(pi/2, 0, 1, 0)));
+        // Update car transformation based on key states
+        if (this.key_states.ArrowUp) {
+            this.velocity = Math.min(this.max_speed, this.velocity + this.acceleration);
+        } else if (this.key_states.ArrowDown) {
+            this.velocity = Math.max(-this.max_speed, this.velocity - this.acceleration);
+        } else {
+            if (this.velocity > 0) {
+                this.velocity = Math.max(0, this.velocity - this.deceleration);
+            } else if (this.velocity < 0) {
+                this.velocity = Math.min(0, this.velocity + this.deceleration);
+            }
+        }
 
-        UFO_transform = UFO_transform.times(Mat4.translation(8,-4, 0.5))
-                                    .times(Mat4.rotation(Math.PI / 2, Math.PI / 2, 0, 0))
-                                    .times(Mat4.scale(0.2,0.2,0.2));
-
+        // Move the car
+        if (this.velocity !== 0) {
+            this.car_transform.post_multiply(Mat4.translation(0, 0, -this.velocity));
+            if (this.key_states.ArrowLeft) {
+                this.car_transform.post_multiply(Mat4.rotation(0.075, 0, 1, 0)); // Reduced rotation amount
+            }
+            if (this.key_states.ArrowRight) {
+                this.car_transform.post_multiply(Mat4.rotation(-0.075, 0, 1, 0)); // Reduced rotation amount
+            }
+        }
 
         const light_position = vec4(0, 0, 0, 1);
         program_state.lights = [new Light(light_position, sun_color, 150 ** sun_radius)];
         this.shapes.sun.draw(context, program_state, sun_transform, this.materials.sun.override({color: sun_color}));
         this.shapes.disk.draw(context, program_state, disk_transform, this.materials.disk);
         this.shapes.black.draw(context, program_state, black_transform, this.materials.black);
-        this.generate_obstacles(context,program_state,5);
+        this.generate_obstacles(context, program_state, 5);
         this.shapes.UFO.draw(context, program_state, UFO_transform, this.materials.UFO);
+        this.shapes.car.draw(context, program_state, this.car_transform, this.materials.car);
+
+        // Camera logic for third-person perspective
+        if (this.third_person) {
+            const car_pos = this.car_transform.times(vec4(0, 0, 0, 1)).to3();
+            const car_forward = this.car_transform.times(vec4(0, 0, -1, 0)).to3().normalized();
+            const car_up = this.car_transform.times(vec4(0, 1, 0, 0)).to3().normalized();
+            const camera_distance = 10; // Distance behind the car
+            const camera_height = 5;    // Height above the car
+
+            const camera_position = vec3(
+                car_pos[0] - camera_distance * car_forward[0],
+                car_pos[1] + camera_height, // Ensure the camera is above the car
+                car_pos[2] - camera_distance * car_forward[2]
+            );
+
+            const desired_camera_matrix = Mat4.look_at(camera_position, car_pos, car_up);
+            program_state.set_camera(desired_camera_matrix);
+        } else {
+            program_state.set_camera(this.initial_camera_location);
+        }
     }
 }
 
