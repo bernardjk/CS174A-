@@ -154,7 +154,7 @@ export class SpaceRacer extends Scene {
 
         this.initial_camera_location = Mat4.look_at(vec3(0, 0, 20), vec3(0, 0, 0), vec3(0, 1, 0));
 
-        this.car_transform = Mat4.translation(0, 0, 0.5).times(Mat4.rotation(Math.PI / 2, 1, 0, 0)).times(Mat4.scale(0.2, 0.2, 0.2)); // Scale the car down
+        this.UFO_transform = Mat4.identity().times(Mat4.translation(8, -4, 0.5)).times(Mat4.rotation(Math.PI / 2, Math.PI / 2, 0, 0)).times(Mat4.scale(0.2, 0.2, 0.2));
         this.key_states = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
         this.velocity = 0;
         this.acceleration = 0.025;
@@ -239,12 +239,12 @@ export class SpaceRacer extends Scene {
 
         // Move the car
         if (this.velocity !== 0) {
-            this.car_transform.post_multiply(Mat4.translation(0, 0, -this.velocity));
+            this.UFO_transform.post_multiply(Mat4.translation(0, 0, -this.velocity));
             if (this.key_states.ArrowLeft) {
-                this.car_transform.post_multiply(Mat4.rotation(0.075, 0, 1, 0)); // Reduced rotation amount
+                this.UFO_transform.post_multiply(Mat4.rotation(0.075, 0, 1, 0)); // Reduced rotation amount
             }
             if (this.key_states.ArrowRight) {
-                this.car_transform.post_multiply(Mat4.rotation(-0.075, 0, 1, 0)); // Reduced rotation amount
+                this.UFO_transform.post_multiply(Mat4.rotation(-0.075, 0, 1, 0)); // Reduced rotation amount
             }
         }
 
@@ -254,14 +254,14 @@ export class SpaceRacer extends Scene {
         this.shapes.disk.draw(context, program_state, disk_transform, this.materials.disk);
         this.shapes.black.draw(context, program_state, black_transform, this.materials.black);
         this.generate_obstacles(context, program_state, 5);
-        this.shapes.UFO.draw(context, program_state, UFO_transform, this.materials.UFO);
-        this.shapes.car.draw(context, program_state, this.car_transform, this.materials.car);
+        this.shapes.UFO.draw(context, program_state, this.UFO_transform, this.materials.UFO);
+        // this.shapes.car.draw(context, program_state, this.car_transform, this.materials.car);
 
         // Camera logic for third-person perspective
         if (this.third_person) {
-            const car_pos = this.car_transform.times(vec4(0, 0, 0, 1)).to3();
-            const car_forward = this.car_transform.times(vec4(0, 0, -1, 0)).to3().normalized();
-            const car_up = this.car_transform.times(vec4(0, 1, 0, 0)).to3().normalized();
+            const car_pos = this.UFO_transform.times(vec4(0, 0, 0, 1)).to3();
+            const car_forward = this.UFO_transform.times(vec4(0, 0, -1, 0)).to3().normalized();
+            const car_up = this.UFO_transform.times(vec4(0, 1, 0, 0)).to3().normalized();
             const camera_distance = 10; // Distance behind the car
             const camera_height = 5;    // Height above the car
 
