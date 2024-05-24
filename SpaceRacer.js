@@ -160,7 +160,7 @@ export class SpaceRacer extends Scene {
             
         }
 
-        this.initial_camera_location = Mat4.look_at(vec3(0, 10, 20), vec3(0, 0, 0), vec3(0, 1, 0));
+        this.initial_camera_location = Mat4.look_at(vec3(0, 0, 20), vec3(0, 0, 0), vec3(0, 1, 0));
     }
 
     make_control_panel() {
@@ -227,12 +227,14 @@ export class SpaceRacer extends Scene {
 
         black_transform = model_transform.times(Mat4.scale(28, 28, 1.3)); 
         
-        // let UFO_transform = model_transform;
+        let UFO_transform = model_transform;
 
         // // UFO_transform = UFO_transform.times(Mat4.scale(0.5,0.5,0.5))
         // //                             .times(Mat4.translation(15,0, 0).times(Mat4.rotation(pi/2, 0, 1, 0)));
 
-        // UFO_transform = UFO_transform.times(Mat4.rotation(Math.PI / 2, 0, 1, 0));
+        UFO_transform = UFO_transform.times(Mat4.translation(8,-4, 0.5))
+                                    .times(Mat4.rotation(Math.PI / 2, Math.PI / 2, 0, 0))
+                                    .times(Mat4.scale(0.2,0.2,0.2));
 
 
         const light_position = vec4(0, 0, 0, 1);
@@ -241,7 +243,7 @@ export class SpaceRacer extends Scene {
         this.shapes.disk.draw(context, program_state, disk_transform, this.materials.disk);
         this.shapes.black.draw(context, program_state, black_transform, this.materials.black);
         this.generate_obstacles(context,program_state,5);
-        // this.shapes.UFO.draw(context, program_state, UFO_transform, this.materials.UFO);
+        this.shapes.UFO.draw(context, program_state, UFO_transform, this.materials.UFO);
     }
 }
 
