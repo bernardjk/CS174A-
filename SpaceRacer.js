@@ -3,7 +3,86 @@ import {defs, tiny} from './examples/common.js';
 const {
     Vector, Vector3, vec, vec3, vec4, color, hex_color, Shader, Matrix, Mat4, Light, Shape, Material, Scene,
 } = tiny;
+export class Body {
+  // **Body** can store and update the properties of a 3D body that incrementally
+  // moves from its previous place due to velocities.  It conforms to the
+  // approach outlined in the "Fix Your Timestep!" blog post by Glenn Fiedler.
+  constructor(shape, material, size) {
+      Object.assign(this,
+          {shape, material, size})
+  }
 
+  // (within some margin of distance).
+  static intersect_cube(p, margin = 0) {
+      return p.every(value => value >= -1 - margin && value <= 1 + margin)
+  }
+
+  static intersect_sphere(p, margin = 0) {
+      return p.dot(p) < 1 + margin;
+  }
+
+  emplace(location_matrix, linear_velocity, angular_velocity, spin_axis = vec3(0, 0, 0).randomized(1).normalized()) {                               // emplace(): assign the body's initial values, or overwrite them.
+      this.center = location_matrix.times(vec4(0, 0, 0, 1)).to3();
+      this.rotation = Mat4.translation(...this.center.times(-1)).times(location_matrix);
+      this.previous = {center: this.center.copy(), rotation: this.rotation.copy()};
+      // drawn_location gets replaced with an interpolated quantity:
+      this.drawn_location = location_matrix;
+      this.temp_matrix = Mat4.identity();
+      return Object.assign(this, {linear_velocity, angular_velocity, spin_axis})
+  }
+
+  advance(time_amount) {
+      // advance(): Perform an integration (the simplistic Forward Euler method) to
+      // advance all the linear and angular velocities one time-step forward.
+      this.previous = {center: this.center.copy(), rotation: this.rotation.copy()};
+      // Apply the velocities scaled proportionally to real time (time_amount):
+      // Linear velocity first, then angular:
+      this.center = this.center.plus(this.linear_velocity.times(time_amount));
+      this.rotation.pre_multiply(Mat4.rotation(time_amount * this.angular_velocity, ...this.spin_axis));
+  }
+
+  // The following are our various functions for testing a single point,
+  // p, against some analytically-known geometric volume formula
+
+  blend_rotation(alpha) {
+      // blend_rotation(): Just naively do a linear blend of the rotations, which looks
+      // ok sometimes but otherwise produces shear matrices, a wrong result.
+
+      // TODO:  Replace this function with proper quaternion blending, and perhaps
+      // store this.rotation in quaternion form instead for compactness.
+      return this.rotation.map((x, i) => vec4(...this.previous.rotation[i]).mix(x, alpha));
+  }
+
+  blend_state(alpha) {
+      // blend_state(): Compute the final matrix we'll draw using the previous two physical
+      // locations the object occupied.  We'll interpolate between these two states as
+      // described at the end of the "Fix Your Timestep!" blog post.
+      this.drawn_location = Mat4.translation(...this.previous.center.mix(this.center, alpha))
+          .times(this.blend_rotation(alpha))
+          .times(Mat4.scale(...this.size));
+  }
+
+  check_if_colliding(b, collider) {
+      // check_if_colliding(): Collision detection function.
+      // DISCLAIMER:  The collision method shown below is not used by anyone; it's just very quick
+      // to code.  Making every collision body an ellipsoid is kind of a hack, and looping
+      // through a list of discrete sphere points to see if the ellipsoids intersect is *really* a
+      // hack (there are perfectly good analytic expressions that can test if two ellipsoids
+      // intersect without discretizing them into points).
+      if (this == b)
+          return false;
+      // Nothing collides with itself.
+      // Convert sphere b to the frame where a is a unit sphere:
+      const T = this.inverse.times(b.drawn_location, this.temp_matrix);
+
+      const {intersect_test, points, leeway} = collider;
+      // For each vertex in that b, shift to the coordinate frame of
+      // a_inv*b.  Check if in that coordinate frame it penetrates
+      // the unit sphere at the origin.  Leave some leeway.
+      return points.arrays.position.some(p =>
+          intersect_test(T.times(p.to4(1)).to3(), leeway));
+  }
+}
 export class Shape_From_File extends Shape {
     // **Shape_From_File** is a versatile standalone Shape that imports
     // all its arrays' data from an .obj 3D model file.
@@ -153,14 +232,20 @@ export class SpaceRacer extends Scene {
         };
 
         this.initial_camera_location = Mat4.look_at(vec3(0, 0, 20), vec3(0, 0, 0), vec3(0, 1, 0));
-
+        this.colliders = [
+          {intersect_test: Body.intersect_sphere, points: new defs.Subdivision_Sphere(1), leeway: .5},
+          {intersect_test: Body.intersect_sphere, points: new defs.Subdivision_Sphere(2), leeway: .3},
+          {intersect_test: Body.intersect_cube, points: new defs.Cube(), leeway: .1}
+      ];
+        this.bodies = [];
         this.UFO_transform = Mat4.identity().times(Mat4.translation(8, -4, 0.5)).times(Mat4.rotation(Math.PI / 2, Math.PI / 2, 0, 0)).times(Mat4.scale(0.2, 0.2, 0.2));
+        this.UFO_body = new Body(this.shapes.UFO, this.materials.UFO, vec3(0.2, 0.2, 0.2)).emplace(this.UFO_transform, vec3(0, 0, 0), 0);
         this.key_states = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
         this.velocity = 0;
         this.acceleration = 0.025;
         this.deceleration = 0.025;
         this.max_speed = 1;
-
+        this.collided = false;
         this.third_person = false;  // Flag for third-person camera mode
     }
 
@@ -179,22 +264,34 @@ export class SpaceRacer extends Scene {
     generate_obstacles(context, program_state, number) {
         let obs_transform = Mat4.identity();
         obs_transform = obs_transform.times(Mat4.translation(7.5, 7.5, 0));
+        this.bodies.push(new Body(this.shapes.obstacle, this.materials.obstacle, vec3(0, 0, 0)).emplace(obs_transform, vec3(0, 0, 0), 0));
         this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
         obs_transform = obs_transform.times(Mat4.translation(-9, 1, 0));
+        this.bodies.push(new Body(this.shapes.obstacle, this.materials.obstacle, vec3(0, 0, 0)).emplace(obs_transform, vec3(0, 0, 0), 0));
         this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
         obs_transform = obs_transform.times(Mat4.translation(-6, -3, 0));
+        this.bodies.push(new Body(this.shapes.obstacle, this.materials.obstacle, vec3(0, 0, 0)).emplace(obs_transform, vec3(0, 0, 0), 0));
         this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
         obs_transform = obs_transform.times(Mat4.translation(0, -5, 0));
+        this.bodies.push(new Body(this.shapes.obstacle, this.materials.obstacle, vec3(0, 0, 0)).emplace(obs_transform, vec3(0, 0, 0), 0));
         this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
         obs_transform = obs_transform.times(Mat4.translation(-2, -5, 0));
+        this.bodies.push(new Body(this.shapes.obstacle, this.materials.obstacle, vec3(0, 0, 0)).emplace(obs_transform, vec3(0, 0, 0), 0));
         this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
         obs_transform = obs_transform.times(Mat4.translation(5, -6, 0));
+        this.bodies.push(new Body(this.shapes.obstacle, this.materials.obstacle, vec3(0, 0, 0)).emplace(obs_transform, vec3(0, 0, 0), 0));
         this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
         obs_transform = obs_transform.times(Mat4.translation(5, 0, 0));
+        this.bodies.push(new Body(this.shapes.obstacle, this.materials.obstacle, vec3(0, 0, 0)).emplace(obs_transform, vec3(0, 0, 0), 0));
+
         this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
         obs_transform = obs_transform.times(Mat4.translation(3, 5, 0));
+        this.bodies.push(new Body(this.shapes.obstacle, this.materials.obstacle, vec3(0, 0, 0)).emplace(obs_transform, vec3(0, 0, 0), 0));
+
         this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
         obs_transform = obs_transform.times(Mat4.translation(6, 5, 0));
+        this.bodies.push(new Body(this.shapes.obstacle, this.materials.obstacle, vec3(0, 0, 0)).emplace(obs_transform, vec3(0, 0, 0), 0));
+
         this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
     }
 
@@ -217,6 +314,7 @@ export class SpaceRacer extends Scene {
 
         let disk_transform = model_transform;
         disk_transform = disk_transform.times(Mat4.scale(23, 23, 1));
+        this.disk_body = new Body(this.shapes.disk, this.materials.disk, )
 
         let black_transform = model_transform;
         black_transform = model_transform.times(Mat4.scale(28, 28, 1.3));
@@ -238,6 +336,10 @@ export class SpaceRacer extends Scene {
         }
 
         // Move the car
+        if(this.collided == true){
+          this.velocity = 0;
+          this.collided = false;
+        }
         if (this.velocity !== 0) {
             this.UFO_transform.post_multiply(Mat4.translation(0, 0, -this.velocity));
             if (this.key_states.ArrowLeft) {
@@ -255,6 +357,13 @@ export class SpaceRacer extends Scene {
         this.shapes.black.draw(context, program_state, black_transform, this.materials.black);
         this.generate_obstacles(context, program_state, 5);
         this.shapes.UFO.draw(context, program_state, this.UFO_transform, this.materials.UFO);
+        this.UFO_body.inverse = Mat4.inverse(this.UFO_body.drawn_location);
+        for (let a of this.bodies){
+          if(this.UFO_body.check_if_colliding(a, this.colliders[0])){
+            console.log("collided");
+            this.collided = true;
+          };
+        }
         // this.shapes.car.draw(context, program_state, this.car_transform, this.materials.car);
 
         // Camera logic for third-person perspective
