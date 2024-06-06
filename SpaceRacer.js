@@ -173,7 +173,8 @@ export class SpaceRacer extends Scene {
             obstacle: new (defs.Subdivision_Sphere.prototype.make_flat_shaded_version())(2),
             UFO: new Shape_From_File('assets/UFO.obj'),
             car: new defs.Cube(),
-            timer: new defs.Subdivision_Sphere(2) // Timer power-up shape
+            timer: new defs.Subdivision_Sphere(2), // Timer power-up shape
+            coin: new defs.Subdivision_Sphere(2) // Coin shape
         };
 
         this.materials = {
@@ -183,7 +184,8 @@ export class SpaceRacer extends Scene {
             obstacle: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 1, color: hex_color("#808080"), specularity: 1}),
             UFO: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 1, color: hex_color("#808080"), specularity: 1}),
             car: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 0.5, specularity: 0.5, color: hex_color("#FF0000")}),
-            timer: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 1, color: hex_color("#FFD700"), specularity: 1}) // Timer power-up material
+            timer: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 1, color: hex_color("#800080"), specularity: 1}), // Timer power-up material
+            coin: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 1, color: hex_color("#FFD700"), specularity: 1}) // Coin material
         };
 
         this.initial_camera_location = Mat4.look_at(vec3(0, 0, 150), vec3(0, 0, 0), vec3(0, 1, 0));
@@ -205,8 +207,16 @@ export class SpaceRacer extends Scene {
         this.spawn_timer_power_ups(); // Spawn initial power-ups
         this.num_obs = 30;
 
+        // Coins
+        this.coin_positions = [];
+        this.coin_active = new Array(5).fill(true); // Array to track active coins
+        this.generate_coin_positions(); // Generate the positions on the ring
+        this.max_speed = 1.0;
+        this.acceleration = 0.02;
+        this.deceleration = 0.02;
+
         // Timer countdown
-        this.timer_seconds = 30; // Initialize timer to 30 seconds
+        this.timer_seconds = 15; // Initialize timer to 30 seconds
         this.last_time = 0; // To keep track of time progression
 
         // Create a canvas for the timer
@@ -248,6 +258,19 @@ export class SpaceRacer extends Scene {
         }
     }
 
+    generate_coin_positions() {
+        const num_coins = 5;
+        const angle_increment = 2 * Math.PI / num_coins;
+
+        for (let i = 0; i < num_coins; i++) {
+            const angle = i * angle_increment;
+            const distance = this.inner_radius + Math.random() * (this.outer_radius - this.inner_radius);
+            const x = distance * Math.cos(angle);
+            const y = distance * Math.sin(angle);
+            this.coin_positions.push(vec3(x, y, 2)); // Assuming z = 0 for simplicity
+        }
+    }
+
     spawn_timer_power_ups() {
         while (this.active_count < 3) {
             const index = Math.floor(Math.random() * 12); // Ensure index is between 0 and 11
@@ -275,7 +298,26 @@ export class SpaceRacer extends Scene {
                     this.timer_active[i] = false; // Deactivate the power-up
                     this.active_count--; // Decrement the active count
                     this.spawn_timer_power_ups(); // Ensure there are always 3 active power-ups
-                    this.timer_seconds += 5; // Increment the timer by 5 seconds
+                    this.timer_seconds += 3; // Increment the timer by 5 seconds
+                }
+            }
+        }
+
+        for (let i = 0; i < this.coin_positions.length; i++) {
+            if (this.coin_active[i]) {
+                const coin_pos = this.coin_positions[i];
+                const distance = Math.sqrt(
+                    (UFO_pos[0] - coin_pos[0]) ** 2 +
+                    (UFO_pos[1] - coin_pos[1]) ** 2 +
+                    (UFO_pos[2] - coin_pos[2]) ** 2
+                );
+
+                if (distance < collision_threshold) {
+                    console.log(`Collision detected with coin at index ${i}`);
+                    this.coin_active[i] = false; // Deactivate the coin
+                    this.max_speed += 0.12; // Increase max speed
+                    this.acceleration += 0.0025;
+                    this.deceleration += 0.0025;
                 }
             }
         }
@@ -294,7 +336,6 @@ export class SpaceRacer extends Scene {
         let randomSign = Math.random() < 0.5 ? -1 : 1;  // Randomly assigns -1 or 1
         return randomNumber * randomSign;
     }
-
 
     display(context, program_state) {
         const pi = Math.PI;
@@ -316,20 +357,16 @@ export class SpaceRacer extends Scene {
         let disk_transform = model_transform;
         disk_transform = disk_transform.times(Mat4.scale(10, 10, 0.5));
 
-        const acceleration = 0.02;
-        const deceleration = 0.02;
-        const max_speed = 1.5; // Maybe have different max speeds for different level difficulties
-
         // Update car transformation based on key states
         if (this.key_states.ArrowUp) {
-            this.velocity = Math.min(max_speed, this.velocity + acceleration);
+            this.velocity = Math.min(this.max_speed, this.velocity + this.acceleration);
         } else if (this.key_states.ArrowDown) {
-            this.velocity = Math.max(-max_speed, this.velocity - acceleration);
+            this.velocity = Math.max(-(this.max_speed), this.velocity - this.acceleration);
         } else {
             if (this.velocity > 0) {
-                this.velocity = Math.max(0, this.velocity - deceleration);
+                this.velocity = Math.max(0, this.velocity - this.deceleration);
             } else if (this.velocity < 0) {
-                this.velocity = Math.min(0, this.velocity + deceleration);
+                this.velocity = Math.min(0, this.velocity + this.deceleration);
             }
         }
 
@@ -357,6 +394,14 @@ export class SpaceRacer extends Scene {
             if (this.timer_active[i]) {
                 const timer_transform = Mat4.translation(...this.timer_positions[i]);
                 this.shapes.timer.draw(context, program_state, timer_transform, this.materials.timer);
+            }
+        }
+
+        // Draw the active coins
+        for (let i = 0; i < this.coin_positions.length; i++) {
+            if (this.coin_active[i]) {
+                const coin_transform = Mat4.translation(...this.coin_positions[i]);
+                this.shapes.coin.draw(context, program_state, coin_transform, this.materials.coin);
             }
         }
 
