@@ -276,7 +276,8 @@ export class SpaceRacer extends Scene {
         this.UFO_body = new Body(this.shapes.UFO, this.materials.UFO, vec3(0.2, 0.2, 0.2)).emplace(this.UFO_transform, vec3(0, 0, 0), 0);
         this.key_states = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
         this.velocity = 0;
-        this.collided = false;
+        this.collided = false; //Flag for collision with asteroids
+        this.offTrack = false; //Flag for being off the track
         this.third_person = false;  // Flag for third-person camera mode
         this.angle_of_rotation = 0; // Track the UFO's angle of rotation
 
@@ -349,6 +350,16 @@ export class SpaceRacer extends Scene {
                 }
             }
         }
+    }
+    check_offTrack(UFO_pos){
+        const inner_radius = 58;
+        const outer_radius = 90;
+        let distance = Math.sqrt(UFO_pos[0]**2 + UFO_pos[1]**2);
+        console.log(distance);
+        if(distance < 58 || distance > 90){
+            return false;
+        }
+        return true;
     }
 
     make_control_panel() {
@@ -460,21 +471,34 @@ export class SpaceRacer extends Scene {
                 this.shapes.timer.draw(context, program_state, timer_transform, this.materials.timer);
             }
         }
-
+        //Let the UFO free fall when it's off the track
+        // if (this.offTrack){
+        //     console.log(Mat4.inverse(this.UFO_transform));
+        //     console.log(this.UFO_transform);
+        //     this.UFO_transform = this.UFO_transform.post_multiply(Mat4.translation(0, -t/100, 0));
+        //     console.log(this.UFO_transform);
+        // }
         // Draw the UFO
         this.shapes.UFO.draw(context, program_state, this.UFO_transform, this.materials.UFO);
-        this.UFO_body.inverse = Mat4.inverse(this.UFO_body.drawn_location);
-        for (let a of this.bodies){
-          if(this.UFO_body.check_if_colliding(a, this.colliders[0])){
-            console.log("collided");
-            this.collided = true;
-          };
-        }
+
+        //Check if UFO collides with asteroids
+        // this.UFO_body.inverse = Mat4.inverse(this.UFO_body.drawn_location); //Cache the matrix for performance improvement
+        // for (let a of this.bodies){
+        //   if(this.UFO_body.check_if_colliding(a, this.colliders[0])){
+        //     console.log("collided");
+        //     this.collided = true;
+        //   };
+        // }
 
         // Check for collisions
         const UFO_pos = this.UFO_transform.times(vec4(0, 0, 0, 1)).to3();
         this.check_collisions(UFO_pos);
 
+        //Check if UFO is off the track
+        if(!this.check_offTrack(UFO_pos)){
+            console.log("falling off");
+            this.offTrack = true;
+        }
         // Update the timer
         if (this.last_time === 0) {
             this.last_time = t;
