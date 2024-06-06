@@ -378,20 +378,20 @@ export class SpaceRacer extends Scene {
             this.children.push(context.scratchpad.controls = new defs.Movement_Controls());
             program_state.set_camera(this.initial_camera_location);
         }
-
+    
         program_state.projection_transform = Mat4.perspective(Math.PI / 4, context.width / context.height, .1, 1000);
-
+    
         const t = program_state.animation_time / 1000, dt = program_state.animation_delta_time / 1000;
         let model_transform = Mat4.identity();
         let sun_transform = model_transform;
-
+    
         var sun_radius = 45;
         sun_transform = sun_transform.times(Mat4.scale(sun_radius, sun_radius, sun_radius));
         var sun_color = color(1, 0.95, 0, 1);
-
+    
         let disk_transform = model_transform;
         disk_transform = disk_transform.times(Mat4.scale(10, 10, 0.5));
-
+    
         // Update car transformation based on key states
         if (this.key_states.ArrowUp) {
             this.velocity = Math.min(this.max_speed, this.velocity + this.acceleration);
@@ -404,7 +404,7 @@ export class SpaceRacer extends Scene {
                 this.velocity = Math.min(0, this.velocity + this.deceleration);
             }
         }
-
+    
         // Move the car
         const angle_to_rotate = 0.075;
         if (this.velocity !== 0) {
@@ -418,12 +418,15 @@ export class SpaceRacer extends Scene {
                 this.UFO_transform.post_multiply(Mat4.rotation(-(angle_to_rotate), 0, 1, 0)); // Reduced rotation amount
             }
         }
-
+    
+        // Apply self-rotation to the UFO
+        let self_rotating_UFO_transform = this.UFO_transform.times(Mat4.rotation(t, 0, 1, 0)); // Rotate around the Y axis
+    
         const light_position = vec4(0, 0, 0, 1);
         program_state.lights = [new Light(light_position, sun_color, 150 ** sun_radius)];
         this.shapes.sun.draw(context, program_state, sun_transform, this.materials.sun.override({color: sun_color}));
         this.shapes.disk.draw(context, program_state, disk_transform, this.materials.disk);
-
+    
         // Draw the active timer power-ups
         for (let i = 0; i < this.timer_positions.length; i++) {
             if (this.timer_active[i]) {
@@ -431,43 +434,47 @@ export class SpaceRacer extends Scene {
                 this.shapes.timer.draw(context, program_state, timer_transform, this.materials.timer);
             }
         }
-
+    
         // Draw the active coins
         for (let i = 0; i < this.coin_positions.length; i++) {
             if (this.coin_active[i]) {
-                const coin_transform = Mat4.translation(...this.coin_positions[i]);
+                // Apply self-rotation to the coin
+                let coin_transform = Mat4.translation(...this.coin_positions[i]);
+                coin_transform = coin_transform.times(Mat4.rotation(t, 0, 1, 0)); // Rotate around the Y axis
                 this.shapes.coin.draw(context, program_state, coin_transform, this.materials.coin);
             }
         }
         
         for (let i = 0; i < this.obstacles.length; i++) {
-            // let obs = this.obstacles[i];
             let angle = Math.atan2(this.obstacles[i].position[1],this.obstacles[i].position[0]);
             let current_distance = Math.sqrt(this.obstacles[i].position[0]**2 +this.obstacles[i].position[1]**2);
-
+    
             let new_distance = current_distance +this.obstacles[i].direction *this.obstacles[i].speed;
             let o_r = this.outer_radius + 10
             let i_r = this.inner_radius - 10
-
+    
             // Check boundary conditions with a buffer zone to prevent jitter
             if (new_distance > o_r) {
                 new_distance = o_r - 0.1; // Stop slightly before the boundary
-               this.obstacles[i].direction = -1; // Reverse direction
+                this.obstacles[i].direction = -1; // Reverse direction
             } else if (new_distance < i_r) {
                 new_distance = i_r + 0.1; // Stop slightly after the boundary
-               this.obstacles[i].direction = 1; // Reverse direction
+                this.obstacles[i].direction = 1; // Reverse direction
             }
-
-           this.obstacles[i].position[0] = new_distance * Math.cos(angle);
-           this.obstacles[i].position[1] = new_distance * Math.sin(angle);
-
-            const obs_transform = Mat4.translation(...this.obstacles[i].position);
+    
+            this.obstacles[i].position[0] = new_distance * Math.cos(angle);
+            this.obstacles[i].position[1] = new_distance * Math.sin(angle);
+    
+            // Self-rotation transformation
+            let obs_transform = Mat4.translation(...this.obstacles[i].position);
+            obs_transform = obs_transform.times(Mat4.rotation(t, 0, 1, 0)); // Rotate around the Y axis
+    
             this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
         }
-        this.shapes.UFO.draw(context, program_state, this.UFO_transform, this.materials.UFO);
-
+        this.shapes.UFO.draw(context, program_state, self_rotating_UFO_transform, this.materials.UFO); // Use self-rotating transform
+    
         // Check for collisions
-        const UFO_pos = this.UFO_transform.times(vec4(0, 0, 0, 1)).to3();
+        const UFO_pos = self_rotating_UFO_transform.times(vec4(0, 0, 0, 1)).to3();
         this.check_collisions(UFO_pos);
         if(this.check_if_colliding(UFO_pos)){
             console.log("collided");
@@ -484,7 +491,7 @@ export class SpaceRacer extends Scene {
             this.timer_seconds--;
             this.last_time = t;
         }
-
+    
         // Display the timer on the canvas
         this.timer_ctx.clearRect(0, 0, this.timer_canvas.width, this.timer_canvas.height);
         this.timer_ctx.fillStyle = "white";
@@ -492,7 +499,7 @@ export class SpaceRacer extends Scene {
         this.timer_ctx.font = "30px Arial";
         this.timer_ctx.fillStyle = "red";
         this.timer_ctx.fillText(this.timer_seconds.toString(), 32, 60);
-
+    
         // Camera logic for third-person and top-down perspective
         const UFO_height = 150; // Fixed height for top-down view
         if (this.third_person) {
@@ -501,13 +508,13 @@ export class SpaceRacer extends Scene {
             const up_direction = vec3(0, 0, 1); // Up is along the z-axis in this plane
             const camera_distance = 10; // Distance behind the UFO
             const camera_height = 2.5;    // Height above the UFO
-
+    
             const camera_position = vec3(
                 UFO_pos[0] - camera_distance * facing_direction[0],
                 UFO_pos[1] - camera_distance * facing_direction[1],
                 UFO_pos[2] + camera_height
             );
-
+    
             const desired_camera_matrix = Mat4.look_at(camera_position, UFO_pos.plus(facing_direction), up_direction);
             program_state.set_camera(desired_camera_matrix);
         } else {
@@ -518,6 +525,7 @@ export class SpaceRacer extends Scene {
         }
     }
 }
+
 
 
 class Custom_Ring_Shader extends Shader {
@@ -576,6 +584,58 @@ class Custom_Ring_Shader extends Shader {
     }
 }
 
+//centered at origin
+// class Custom_Ring_Shader extends Shader {
+//     update_GPU(context, gpu_addresses, program_state, model_transform, material) {
+//         const [P, C, M] = [program_state.projection_transform, program_state.camera_inverse, model_transform],
+//             PCM = P.times(C).times(M);
+//         context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
+//         context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
+
+//         // Update uniform values for time, resolution, and mouse if needed
+//         const u_time = program_state.animation_time / 1000;
+//         context.uniform1f(gpu_addresses.u_time, u_time);
+//         context.uniform2f(gpu_addresses.u_resolution, context.canvas.width, context.canvas.height);
+//     }
+
+//     shared_glsl_code() {
+//         return `
+//             precision mediump float;
+//             varying vec3 v_position;
+//         `;
+//     }
+
+//     vertex_glsl_code() {
+//         return this.shared_glsl_code() + `
+//             attribute vec3 position;
+//             uniform mat4 model_transform;
+//             uniform mat4 projection_camera_model_transform;
+//             void main() {
+//                 gl_Position = projection_camera_model_transform * vec4(position, 1.0);
+//                 v_position = (model_transform * vec4(position, 1.0)).xyz;
+//             }
+//         `;
+//     }
+
+//     fragment_glsl_code() {
+//         return this.shared_glsl_code() + `
+//             uniform float u_time;
+//             uniform vec2 u_resolution;
+//             void main() {
+//                 vec2 coord = v_position.xy / u_resolution;
+//                 vec3 color = vec3(0.0);
+//                 vec2 translate = vec2(-0.5);
+//                 coord += translate;
+
+//                 color.r += abs(0.1 + length(coord) - 0.6 * abs(sin(u_time * 0.9 / 12.0)));
+//                 color.g += abs(0.1 + length(coord) - 0.6 * abs(sin(u_time * 0.6 / 4.0)));
+//                 color.b += abs(0.1 + length(coord) - 0.6 * abs(sin(u_time * 0.3 / 9.0)));
+
+//                 gl_FragColor = vec4(0.1 / color, 1.0);
+//             }
+//         `;
+//     }
+// }
 
 class Custom_Sun_Shader extends Shader {
     update_GPU(context, gpu_addresses, program_state, model_transform, material) {
