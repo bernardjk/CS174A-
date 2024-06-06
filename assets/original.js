@@ -193,11 +193,7 @@ export class SpaceRacer extends Scene {
         this.UFO_transform = Mat4.identity().times(Mat4.translation(8, -4, 2)).times(Mat4.rotation(Math.PI / 2, Math.PI / 2, 0, 0)).times(Mat4.scale(0.5, 0.5, 0.5));
         this.key_states = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
         this.velocity = 0;
-        this.collided = false; //Flag for collision with asteroids
-        this.offTrack = false; //Flag for being off the track
-        this.prev_offTrack_value = this.offTrack;
-        this.curr_offTrack_value = this.offTrack;
-        this.offTrack_count = 0; //Number of times offTrack value changes
+
         this.third_person = false;  // Flag for third-person camera mode
         this.angle_of_rotation = 0; // Track the UFO's angle of rotation
 
@@ -326,38 +322,7 @@ export class SpaceRacer extends Scene {
             }
         }
     }
-    
-    check_if_colliding(UFO_pos) {
-        // const T = UFO_inverse_transform.times(obstacle_transform);
-        // const {intersect_test, points, leeway} = collider;
-        // // For each vertex in that b, shift to the coordinate frame of
-        // // a_inv*b.  Check if in that coordinate frame it penetrates
-        // // the unit sphere at the origin.  Leave some leeway.
-        // return points.arrays.position.some(p =>
-        //     intersect_test(T.times(p.to4(1)).to3(), leeway));
-        const collision_threshold = 3;
-        for(let i = 0; i < this.obstacles.length; i++){
-            const obs_pos = this.obstacles[i].position;
-            const distance = Math.sqrt((UFO_pos[0] - obs_pos[0])**2 + 
-                                        (UFO_pos[1] - obs_pos[1])**2 +
-                                         (UFO_pos[2] - obs_pos[2])**2 );
-            if(distance < collision_threshold){
-                return true;
-            }
 
-        }
-        return false;
-    }
-    check_offTrack(UFO_pos){
-        let distance = Math.sqrt(UFO_pos[0]**2 + UFO_pos[1]**2);
-        // console.log(distance);
-        if(distance < (this.inner_radius - 15) || distance > (this.outer_radius + 15)){
-            return true;
-        }
-        return false;
-    }
-
-    
     make_control_panel() {
         this.key_triggered_button("Move Forward", ["ArrowUp"], () => this.key_states.ArrowUp = true, undefined, () => this.key_states.ArrowUp = false);
         this.key_triggered_button("Move Backward", ["ArrowDown"], () => this.key_states.ArrowDown = true, undefined, () => this.key_states.ArrowDown = false);
@@ -439,60 +404,39 @@ export class SpaceRacer extends Scene {
                 this.shapes.coin.draw(context, program_state, coin_transform, this.materials.coin);
             }
         }
-        
-        for (let i = 0; i < this.obstacles.length; i++) {
-            // let obs = this.obstacles[i];
-            let angle = Math.atan2(this.obstacles[i].position[1],this.obstacles[i].position[0]);
-            let current_distance = Math.sqrt(this.obstacles[i].position[0]**2 +this.obstacles[i].position[1]**2);
 
-            let new_distance = current_distance +this.obstacles[i].direction *this.obstacles[i].speed;
+        for (let i = 0; i < this.obstacles.length; i++) {
+            let obs = this.obstacles[i];
+            let angle = Math.atan2(obs.position[1], obs.position[0]);
+            let current_distance = Math.sqrt(obs.position[0]**2 + obs.position[1]**2);
+
+            let new_distance = current_distance + obs.direction * obs.speed;
             let o_r = this.outer_radius + 10
             let i_r = this.inner_radius - 10
 
             // Check boundary conditions with a buffer zone to prevent jitter
             if (new_distance > o_r) {
                 new_distance = o_r - 0.1; // Stop slightly before the boundary
-               this.obstacles[i].direction = -1; // Reverse direction
+                obs.direction = -1; // Reverse direction
             } else if (new_distance < i_r) {
                 new_distance = i_r + 0.1; // Stop slightly after the boundary
-               this.obstacles[i].direction = 1; // Reverse direction
+                obs.direction = 1; // Reverse direction
             }
 
-           this.obstacles[i].position[0] = new_distance * Math.cos(angle);
-           this.obstacles[i].position[1] = new_distance * Math.sin(angle);
+            obs.position[0] = new_distance * Math.cos(angle);
+            obs.position[1] = new_distance * Math.sin(angle);
 
-            const obs_transform = Mat4.translation(...this.obstacles[i].position);
+            const obs_transform = Mat4.translation(...obs.position);
             this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
         }
-        //Keep track of the change of offTrack value. 
-        //First time change: when the game start, UFO is off the track, false->true
-        //Second time: when UFO gets back on the track for the first time, true->false
-        //Third time: The next time UFO is off-the-track, which will be game over or UFO free fall
-        this.curr_offTrack_value = this.offTrack;
-        if (this.curr_offTrack_value != this.prev_offTrack_value){
-            this.offTrack_count ++;
-            this.prev_offTrack_value = this.curr_offTrack_value;
-        }
-        //Let the UFO free fall when value changes the third time, GAME OVER here
-        if(this.offTrack_count == 3){
-            this.UFO_transform = this.UFO_transform.post_multiply(Mat4.translation(0, -t/2, 0));
-        }
+
         // Draw the UFO
         this.shapes.UFO.draw(context, program_state, this.UFO_transform, this.materials.UFO);
 
         // Check for collisions
         const UFO_pos = this.UFO_transform.times(vec4(0, 0, 0, 1)).to3();
         this.check_collisions(UFO_pos);
-        if(this.check_if_colliding(UFO_pos)){
-            console.log("collided");
-        }
-        //Check the value of offTrack variable
-        if(this.check_offTrack(UFO_pos)){
-            this.offTrack = true;
-        }
-        else{
-            this.offTrack = false;
-        }
+
         // Update the timer
         if (this.last_time === 0) {
             this.last_time = t;
