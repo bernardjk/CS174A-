@@ -174,7 +174,7 @@ export class SpaceRacer extends Scene {
             UFO: new Shape_From_File('assets/UFO.obj'),
             car: new defs.Cube(),
             timer: new defs.Subdivision_Sphere(2), // Timer power-up shape
-            coin: new defs.Subdivision_Sphere(2) // Coin shape
+            coin: new Shape_From_File('assets/Coin.obj') // Coin shape
         };
 
         this.materials = {
@@ -185,12 +185,12 @@ export class SpaceRacer extends Scene {
             UFO: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 1, color: hex_color("#808080"), specularity: 1}),
             car: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 0.5, specularity: 0.5, color: hex_color("#FF0000")}),
             timer: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 1, color: hex_color("#800080"), specularity: 1}), // Timer power-up material
-            coin: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 1, color: hex_color("#FFD700"), specularity: 1}) // Coin material
+            coin: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 0, color: hex_color("#FFD700"), specularity: 1}) // Coin material
         };
 
         this.initial_camera_location = Mat4.look_at(vec3(0, 0, 150), vec3(0, 0, 0), vec3(0, 1, 0));
 
-        this.UFO_transform = Mat4.identity().times(Mat4.translation(8, -4, 2)).times(Mat4.rotation(Math.PI / 2, Math.PI / 2, 0, 0)).times(Mat4.scale(0.5, 0.5, 0.5));
+        this.UFO_transform = Mat4.identity().times(Mat4.translation(80, 0, 2)).times(Mat4.rotation(Math.PI / 2, Math.PI / 2, 0, 0)).times(Mat4.scale(0.5, 0.5, 0.5));
         this.key_states = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
         this.velocity = 0;
         this.collided = false; //Flag for collision with asteroids
@@ -351,7 +351,7 @@ export class SpaceRacer extends Scene {
     check_offTrack(UFO_pos){
         let distance = Math.sqrt(UFO_pos[0]**2 + UFO_pos[1]**2);
         // console.log(distance);
-        if(distance < (this.inner_radius - 15) || distance > (this.outer_radius + 15)){
+        if(distance < (this.inner_radius - 10 ) || distance > (this.outer_radius + 15)){
             return true;
         }
         return false;
@@ -464,20 +464,6 @@ export class SpaceRacer extends Scene {
             const obs_transform = Mat4.translation(...this.obstacles[i].position);
             this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
         }
-        //Keep track of the change of offTrack value. 
-        //First time change: when the game start, UFO is off the track, false->true
-        //Second time: when UFO gets back on the track for the first time, true->false
-        //Third time: The next time UFO is off-the-track, which will be game over or UFO free fall
-        this.curr_offTrack_value = this.offTrack;
-        if (this.curr_offTrack_value != this.prev_offTrack_value){
-            this.offTrack_count ++;
-            this.prev_offTrack_value = this.curr_offTrack_value;
-        }
-        //Let the UFO free fall when value changes the third time, GAME OVER here
-        if(this.offTrack_count == 3){
-            this.UFO_transform = this.UFO_transform.post_multiply(Mat4.translation(0, -t/2, 0));
-        }
-        // Draw the UFO
         this.shapes.UFO.draw(context, program_state, this.UFO_transform, this.materials.UFO);
 
         // Check for collisions
@@ -488,10 +474,7 @@ export class SpaceRacer extends Scene {
         }
         //Check the value of offTrack variable
         if(this.check_offTrack(UFO_pos)){
-            this.offTrack = true;
-        }
-        else{
-            this.offTrack = false;
+            this.UFO_transform = this.UFO_transform.post_multiply(Mat4.translation(0, -t/2, 0));
         }
         // Update the timer
         if (this.last_time === 0) {
