@@ -217,7 +217,7 @@ export class SpaceRacer extends Scene {
         this.timer_canvas.style.top = '20px';
         this.timer_canvas.style.right = '148px'; // Move the canvas 20px more to the left
         this.timer_canvas.style.border = '2px solid black'; // Add a black border
-        document.body.appendChild(this.timer_canvas); 
+        document.body.appendChild(this.timer_canvas);
         this.timer_ctx = this.timer_canvas.getContext('2d');
         this.obstacles = [];
         this.generate_obs_positions();
@@ -346,7 +346,7 @@ export class SpaceRacer extends Scene {
                 this.UFO_transform.post_multiply(Mat4.rotation(-(angle_to_rotate), 0, 1, 0)); // Reduced rotation amount
             }
         }
-        
+
         const light_position = vec4(0, 0, 0, 1);
         program_state.lights = [new Light(light_position, sun_color, 150 ** sun_radius)];
         this.shapes.sun.draw(context, program_state, sun_transform, this.materials.sun.override({color: sun_color}));
@@ -364,11 +364,11 @@ export class SpaceRacer extends Scene {
             let obs = this.obstacles[i];
             let angle = Math.atan2(obs.position[1], obs.position[0]);
             let current_distance = Math.sqrt(obs.position[0]**2 + obs.position[1]**2);
-    
+
             let new_distance = current_distance + obs.direction * obs.speed;
             let o_r = this.outer_radius + 10
             let i_r = this.inner_radius - 10
-    
+
             // Check boundary conditions with a buffer zone to prevent jitter
             if (new_distance > o_r) {
                 new_distance = o_r - 0.1; // Stop slightly before the boundary
@@ -377,18 +377,13 @@ export class SpaceRacer extends Scene {
                 new_distance = i_r + 0.1; // Stop slightly after the boundary
                 obs.direction = 1; // Reverse direction
             }
-    
+
             obs.position[0] = new_distance * Math.cos(angle);
             obs.position[1] = new_distance * Math.sin(angle);
-    
+
             const obs_transform = Mat4.translation(...obs.position);
             this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
         }
-        
-        // this.obstacles.forEach(element => {
-        //     this.shapes.obstacle.draw(context, program_state, element, this.materials.obstacle);
-        // });
-        // this.generate_obstacles(context,program_state,8);
 
         // Draw the UFO
         this.shapes.UFO.draw(context, program_state, this.UFO_transform, this.materials.UFO);
@@ -405,7 +400,6 @@ export class SpaceRacer extends Scene {
             this.timer_seconds--;
             this.last_time = t;
         }
-        
 
         // Display the timer on the canvas
         this.timer_ctx.clearRect(0, 0, this.timer_canvas.width, this.timer_canvas.height);
@@ -415,7 +409,8 @@ export class SpaceRacer extends Scene {
         this.timer_ctx.fillStyle = "red";
         this.timer_ctx.fillText(this.timer_seconds.toString(), 32, 60);
 
-        // Camera logic for third-person perspective
+        // Camera logic for third-person and top-down perspective
+        const UFO_height = 150; // Fixed height for top-down view
         if (this.third_person) {
             const angle_radians = this.angle_of_rotation;
             const facing_direction = vec3(Math.sin(angle_radians), Math.cos(angle_radians), 0);
@@ -432,7 +427,10 @@ export class SpaceRacer extends Scene {
             const desired_camera_matrix = Mat4.look_at(camera_position, UFO_pos.plus(facing_direction), up_direction);
             program_state.set_camera(desired_camera_matrix);
         } else {
-            program_state.set_camera(this.initial_camera_location);
+            // Top-down view
+            const camera_position = vec3(UFO_pos[0], UFO_pos[1], UFO_height);
+            const desired_camera_matrix = Mat4.look_at(camera_position, UFO_pos, vec3(0, 1, 0));
+            program_state.set_camera(desired_camera_matrix);
         }
     }
 }
