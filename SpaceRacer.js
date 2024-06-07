@@ -450,7 +450,7 @@ export class SpaceRacer extends Scene {
             if (this.coin_active[i]) {
                 // Apply self-rotation to the coin
                 let coin_transform = Mat4.translation(...this.coin_positions[i]);
-                coin_transform = coin_transform.times(Mat4.rotation(t, 0, 1, 0)); // Rotate around the Y axis
+                coin_transform = coin_transform.times(Mat4.rotation(t, 0, 0, 1)); // Rotate around the Y axis
                 this.shapes.coin.draw(context, program_state, coin_transform, this.materials.coin);
             }
         }
@@ -594,58 +594,6 @@ class Custom_Ring_Shader extends Shader {
 }
 
 //centered at origin
-// class Custom_Ring_Shader extends Shader {
-//     update_GPU(context, gpu_addresses, program_state, model_transform, material) {
-//         const [P, C, M] = [program_state.projection_transform, program_state.camera_inverse, model_transform],
-//             PCM = P.times(C).times(M);
-//         context.uniformMatrix4fv(gpu_addresses.projection_camera_model_transform, false, Matrix.flatten_2D_to_1D(PCM.transposed()));
-//         context.uniformMatrix4fv(gpu_addresses.model_transform, false, Matrix.flatten_2D_to_1D(model_transform.transposed()));
-
-//         // Update uniform values for time, resolution, and mouse if needed
-//         const u_time = program_state.animation_time / 1000;
-//         context.uniform1f(gpu_addresses.u_time, u_time);
-//         context.uniform2f(gpu_addresses.u_resolution, context.canvas.width, context.canvas.height);
-//     }
-
-//     shared_glsl_code() {
-//         return `
-//             precision mediump float;
-//             varying vec3 v_position;
-//         `;
-//     }
-
-//     vertex_glsl_code() {
-//         return this.shared_glsl_code() + `
-//             attribute vec3 position;
-//             uniform mat4 model_transform;
-//             uniform mat4 projection_camera_model_transform;
-//             void main() {
-//                 gl_Position = projection_camera_model_transform * vec4(position, 1.0);
-//                 v_position = (model_transform * vec4(position, 1.0)).xyz;
-//             }
-//         `;
-//     }
-
-//     fragment_glsl_code() {
-//         return this.shared_glsl_code() + `
-//             uniform float u_time;
-//             uniform vec2 u_resolution;
-//             void main() {
-//                 vec2 coord = v_position.xy / u_resolution;
-//                 vec3 color = vec3(0.0);
-//                 vec2 translate = vec2(-0.5);
-//                 coord += translate;
-
-//                 color.r += abs(0.1 + length(coord) - 0.6 * abs(sin(u_time * 0.9 / 12.0)));
-//                 color.g += abs(0.1 + length(coord) - 0.6 * abs(sin(u_time * 0.6 / 4.0)));
-//                 color.b += abs(0.1 + length(coord) - 0.6 * abs(sin(u_time * 0.3 / 9.0)));
-
-//                 gl_FragColor = vec4(0.1 / color, 1.0);
-//             }
-//         `;
-//     }
-// }
-
 class Custom_Sun_Shader extends Shader {
     update_GPU(context, gpu_addresses, program_state, model_transform, material) {
         const [P, C, M] = [program_state.projection_transform, program_state.camera_inverse, model_transform],
@@ -657,26 +605,23 @@ class Custom_Sun_Shader extends Shader {
         const u_time = program_state.animation_time / 1000;
         context.uniform1f(gpu_addresses.u_time, u_time);
         context.uniform2f(gpu_addresses.u_resolution, context.canvas.width, context.canvas.height);
-        // You can pass mouse coordinates if needed
-        context.uniform2f(gpu_addresses.u_mouse, 0, 0); // Replace with actual mouse coordinates if needed
     }
 
     shared_glsl_code() {
         return `
             precision mediump float;
-            varying vec2 v_uv;
+            varying vec3 v_position;
         `;
     }
 
     vertex_glsl_code() {
         return this.shared_glsl_code() + `
             attribute vec3 position;
-            attribute vec2 texture_coord;
             uniform mat4 model_transform;
             uniform mat4 projection_camera_model_transform;
             void main() {
                 gl_Position = projection_camera_model_transform * vec4(position, 1.0);
-                v_uv = texture_coord;
+                v_position = (model_transform * vec4(position, 1.0)).xyz;
             }
         `;
     }
@@ -685,18 +630,17 @@ class Custom_Sun_Shader extends Shader {
         return this.shared_glsl_code() + `
             uniform float u_time;
             uniform vec2 u_resolution;
-            uniform vec2 u_mouse;
             void main() {
-                vec2 coord = gl_FragCoord.xy * 0.3 / u_resolution;
+                vec2 coord = v_position.xy / u_resolution;
                 vec3 color = vec3(0.0);
                 vec2 translate = vec2(-0.5);
                 coord += translate;
 
-                color.r += abs(0.1 + length(coord) - 0.6 * abs(sin(u_time * 0.9 / 3.0)));
-                color.g += abs(0.1 + length(coord) - 0.6 * abs(sin(u_time * 0.3 / 4.0)));
-                color.b += abs(0.1 + length(coord) - 0.6 * abs(sin(u_time * 0.6 / 9.0)));
+                color.r += abs(0.1 + length(coord) - 0.6 * abs(sin(u_time * 0.9 / 12.0)));
+                color.g += abs(0.1 + length(coord) - 0.6 * abs(sin(u_time * 0.6 / 4.0)));
+                color.b += abs(0.1 + length(coord) - 0.6 * abs(sin(u_time * 0.3 / 9.0)));
 
-                gl_FragColor = vec4(0.3 / color, 1.0);
+                gl_FragColor = vec4(0.1 / color, 1.0);
             }
         `;
     }
