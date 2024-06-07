@@ -564,7 +564,7 @@ export class SpaceRacer extends Scene {
             this.timer_seconds--;
             this.last_time = t;
         }
-        this.shapes.text.set_string('You lose!', context.context);
+        this.shapes.text.set_string('Game over!', context.context);
         this.shapes.text.draw(context,program_state,
             this.initial_camera_location.times(Mat4.translation(-105, 10, 1000)).times(Mat4.scale(10, 10, 10)),
             this.materials.start_text);
