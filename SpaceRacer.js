@@ -216,6 +216,7 @@ export class SpaceRacer extends Scene {
             car: new defs.Cube(),
             timer: new defs.Subdivision_Sphere(2), // Timer power-up shape
             coin: new Shape_From_File('assets/Coin.obj'), // Coin shape
+            speed_boost: new defs.Subdivision_Sphere(2), // Speed boost power-up shape
             text: new Text_Line(35)
 
         };
@@ -229,13 +230,14 @@ export class SpaceRacer extends Scene {
             car: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 0.5, specularity: 0.5, color: hex_color("#FF0000")}),
             timer: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 1, color: hex_color("#800080"), specularity: 1}), // Timer power-up material
             coin: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 0, color: hex_color("#FFD700"), specularity: 1}), // Coin material
+            speed_boost: new Material(new defs.Phong_Shader(), {ambient: 1, diffusivity: 1, color: hex_color("#FFFFFF"), specularity: 1}), // Speed boost material
             start_text: new Material(new defs.Textured_Phong(1), {color: color(0, 0, 255, 1), ambient: 0.5, diffusivity: 0.1, specularity: 0.1, texture: new Texture('assets/text.png'),})
 
         };
 
         this.initial_camera_location = Mat4.look_at(vec3(0, 0, 150), vec3(0, 0, 0), vec3(0, 1, 0));
 
-        this.UFO_transform = Mat4.identity().times(Mat4.translation(80, 0, 2)).times(Mat4.rotation(Math.PI / 2, Math.PI / 2, 0, 0)).times(Mat4.scale(0.5, 0.5, 0.5));
+        this.UFO_transform = Mat4.identity().times(Mat4.translation(80, 10, 2)).times(Mat4.rotation(Math.PI / 2, Math.PI / 2, 0, 0)).times(Mat4.scale(0.5, 0.5, 0.5));
         this.key_states = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
         this.velocity = 0;
         this.collided_count = 0; //Keep track of number of collisions
@@ -256,6 +258,8 @@ export class SpaceRacer extends Scene {
         this.generate_timer_positions(); // Generate the positions on the ring
         this.spawn_timer_power_ups(); // Spawn initial power-ups
         this.num_obs = 30;
+        this.show_canvases = true;
+        this.active_speed = 0;
 
         // Coins
         this.coin_positions = [];
@@ -263,9 +267,19 @@ export class SpaceRacer extends Scene {
         this.coin_count = 0;
         this.generate_coin_positions(); // Generate the positions on the ring
         this.spawn_coins();
+
+        // Speed boost power-ups
+        this.speed_boost_positions = [];
+        this.speed_boost_active = [true, true]; // Two speed boosts
+        this.generate_speed_boost_positions();
         this.max_speed = 1.0;
         this.acceleration = 0.02;
         this.deceleration = 0.02;
+        this.boosted_max_speed = 2.0; // Boosted max speed
+        this.boosted_acceleration = 0.04; // Boosted acceleration
+        this.boosted_deceleration = 0.04; // Boosted deceleration
+        this.picked_up_speed_boost = false; // Speed boost flag
+        this.boost_time = 0; // Boost timer
 
         // Timer countdown
         this.timer_seconds = 15; // Initialize timer to 30 seconds
@@ -293,8 +307,8 @@ export class SpaceRacer extends Scene {
          this.score_ctx = this.score_canvas.getContext('2d');
         this.obstacles = [];
         this.generate_obs_positions();
-       
-        
+
+
     }
 
     generate_obs_positions() {
@@ -334,6 +348,20 @@ export class SpaceRacer extends Scene {
             this.coin_positions.push(vec3(x, y, 2)); // Assuming z = 0 for simplicity
         }
     }
+
+    generate_speed_boost_positions() {
+        const num_boosts = 2;
+        const angle_increment = Math.PI; // 180 degrees apart
+
+        for (let i = 0; i < num_boosts; i++) {
+            const angle = i * angle_increment;
+            const distance = this.inner_radius + Math.random() * (this.outer_radius - this.inner_radius);
+            const x = distance * Math.cos(angle);
+            const y = distance * Math.sin(angle);
+            this.speed_boost_positions.push(vec3(x, y, 2)); // Assuming z = 0 for simplicity
+        }
+    }
+
     spawn_coins(){
         while (this.coin_count < 5) {
             const index = Math.floor(Math.random() * 18); // Ensure index is between 0 and 11
@@ -389,11 +417,30 @@ export class SpaceRacer extends Scene {
                     console.log(`Collision detected with coin at index ${i}`);
                     this.coin_active[i] = false; // Deactivate the coin
                     this.coin_count -= 1;
-                    this.max_speed += 0.12; // Increase max speed
-                    this.acceleration += 0.0025;
-                    this.deceleration += 0.0025;
                     this.score ++;
                     this.spawn_coins();
+                }
+            }
+        }
+
+        for (let i = 0; i < this.speed_boost_positions.length; i++) {
+            if (this.speed_boost_active[i]) {
+                const boost_pos = this.speed_boost_positions[i];
+                const distance = Math.sqrt(
+                    (UFO_pos[0] - boost_pos[0]) ** 2 +
+                    (UFO_pos[1] - boost_pos[1]) ** 2 +
+                    (UFO_pos[2] - boost_pos[2]) ** 2
+                );
+
+                if (distance < collision_threshold) {
+                    console.log(`Collision detected with speed boost at index ${i}`);
+                    this.speed_boost_active[i] = false; // Deactivate the speed boost
+                    this.active_speed = i;
+                    this.picked_up_speed_boost = true; // Activate speed boost
+                    this.boost_time = 0; // Reset boost timer
+                    this.max_speed = this.boosted_max_speed; // Apply boosted speed
+                    this.acceleration = this.boosted_acceleration;
+                    this.deceleration = this.boosted_deceleration;
                 }
             }
         }
@@ -463,7 +510,7 @@ export class SpaceRacer extends Scene {
 
         program_state.projection_transform = Mat4.perspective(Math.PI / 4, context.width / context.height, .1, 1000);
         let desired_camera_matrix = this.initial_camera_location;
-    
+
         const t = program_state.animation_time / 1000, dt = program_state.animation_delta_time / 1000;
         let model_transform = Mat4.identity();
         let sun_transform = model_transform;
@@ -528,6 +575,14 @@ export class SpaceRacer extends Scene {
             }
         }
 
+        // Draw the active speed boosts
+        for (let i = 0; i < this.speed_boost_positions.length; i++) {
+            if (this.speed_boost_active[i]) {
+                const boost_transform = Mat4.translation(...this.speed_boost_positions[i]);
+                this.shapes.speed_boost.draw(context, program_state, boost_transform, this.materials.speed_boost);
+            }
+        }
+
         for (let i = 0; i < this.obstacles.length; i++) {
             let angle = Math.atan2(this.obstacles[i].position[1],this.obstacles[i].position[0]);
             let current_distance = Math.sqrt(this.obstacles[i].position[0]**2 +this.obstacles[i].position[1]**2);
@@ -563,14 +618,26 @@ export class SpaceRacer extends Scene {
 
         //Check the value of offTrack variable
         // Update the timer
+        // Update the timer
         if (this.last_time === 0) {
             this.last_time = t;
         }
         if (t - this.last_time >= 1) {
             this.timer_seconds--;
             this.last_time = t;
+            if (this.picked_up_speed_boost) {
+                this.boost_time++;
+                if (this.boost_time >= 10) {
+                    this.picked_up_speed_boost = false;
+                    this.max_speed = 1.0;
+                    this.acceleration = 0.02;
+                    this.deceleration = 0.02;
+                    this.speed_boost_active[this.active_speed] = true;
+                }
+            }
         }
-        if(this.check_offTrack(UFO_pos) || this.timer_seconds <= 0){
+
+        if(this.check_offTrack(UFO_pos)){
             this.UFO_transform = this.UFO_transform.post_multiply(Mat4.translation(0, -0.5, 0));
         }
         this.shapes.text.set_string('Game over!', context.context);
@@ -582,29 +649,40 @@ export class SpaceRacer extends Scene {
             this.initial_camera_location.times(Mat4.translation(-105, -20, 1000)).times(Mat4.scale(10, 10, 10)),
             this.materials.start_text);
         program_state.set_camera(this.initial_camera_location);
-    
-        // Display the timer on the canvas
-        this.timer_ctx.clearRect(0, 0, this.timer_canvas.width, this.timer_canvas.height);
-        this.timer_ctx.fillStyle = "white";
-        this.timer_ctx.fillRect(0, 0, this.timer_canvas.width, this.timer_canvas.height);
-        this.timer_ctx.font = "30px Arial";
-        this.timer_ctx.fillStyle = "red";
-        this.timer_ctx.fillText(this.timer_seconds.toString(), 32, 60);
-        //Dispay the scoreboard
-        this.score_ctx.clearRect(0, 0, this.score_canvas.width, this.score_canvas.height);
-        this.score_ctx.fillStyle = "white";
-        this.score_ctx.fillRect(0, 0, this.score_canvas.width, this.score_canvas.height);
-        this.score_ctx.font = "30px Arial";
-        this.score_ctx.fillStyle = "red";
-        this.score_ctx.fillText(this.score.toString(), 32, 60);
-    
+
+
+        if (this.show_canvases) {
+            // Display the timer on the canvas
+            this.timer_ctx.clearRect(0, 0, this.timer_canvas.width, this.timer_canvas.height);
+            this.timer_ctx.fillStyle = "white";
+            this.timer_ctx.fillRect(0, 0, this.timer_canvas.width, this.timer_canvas.height);
+            this.timer_ctx.font = "30px Arial";
+            this.timer_ctx.fillStyle = "red";
+            this.timer_ctx.fillText(this.timer_seconds.toString(), 32, 60);
+            //Dispay the scoreboard
+            this.score_ctx.clearRect(0, 0, this.score_canvas.width, this.score_canvas.height);
+            this.score_ctx.fillStyle = "white";
+            this.score_ctx.fillRect(0, 0, this.score_canvas.width, this.score_canvas.height);
+            this.score_ctx.font = "30px Arial";
+            this.score_ctx.fillStyle = "red";
+            this.score_ctx.fillText(this.score.toString(), 32, 60);
+        }
+
         // Camera logic for third-person and top-down perspective
-        if (UFO_pos[2] < -5) {
+        if (UFO_pos[2] < -15  || this.timer_seconds < 0) {
+            this.frozen = true;
+            this.show_canvases = false;
+            if (document.body.contains(this.timer_canvas)) {
+                document.body.removeChild(this.timer_canvas);
+            }
+            if (document.body.contains(this.score_canvas)) {
+                document.body.removeChild(this.score_canvas);
+            }
             desired_camera_matrix = Mat4.look_at(vec3(0, 0, 1100), vec3(0, 0, 0), vec3(0, 1, 0));
             program_state.set_camera(desired_camera_matrix);
         }
         else {
-                // Camera logic for third-person and top-down perspective
+            // Camera logic for third-person and top-down perspective
             const UFO_height = 150; // Fixed height for top-down view
             if (this.third_person) {
                 const angle_radians = this.angle_of_rotation;
@@ -620,12 +698,48 @@ export class SpaceRacer extends Scene {
                 );
 
                 desired_camera_matrix = Mat4.look_at(camera_position, UFO_pos.plus(facing_direction), up_direction);
-                program_state.set_camera(desired_camera_matrix);
-            } else {
+
+                if (UFO_pos[2] < -2.25 && !this.frozen) {
+                    this.frozen = true;
+                    this.frozen_camera = desired_camera_matrix;
+                }
+                if (this.frozen) {
+                    program_state.set_camera(this.frozen_camera);
+                }
+                else {
+                    program_state.set_camera(desired_camera_matrix);
+                }
+            }
+            else {
+                // Display the timer on the canvas
+                this.timer_ctx.clearRect(0, 0, this.timer_canvas.width, this.timer_canvas.height);
+                this.timer_ctx.fillStyle = "white";
+                this.timer_ctx.fillRect(0, 0, this.timer_canvas.width, this.timer_canvas.height);
+                this.timer_ctx.font = "30px Arial";
+                this.timer_ctx.fillStyle = "red";
+                this.timer_ctx.fillText(this.timer_seconds.toString(), 32, 60);
+                //Dispay the scoreboard
+                this.score_ctx.clearRect(0, 0, this.score_canvas.width, this.score_canvas.height);
+                this.score_ctx.fillStyle = "white";
+                this.score_ctx.fillRect(0, 0, this.score_canvas.width, this.score_canvas.height);
+                this.score_ctx.font = "30px Arial";
+                this.score_ctx.fillStyle = "red";
+                this.score_ctx.fillText(this.score.toString(), 32, 60);
+
                 // Top-down view
                 const camera_position = vec3(UFO_pos[0], UFO_pos[1], UFO_height);
                 desired_camera_matrix = Mat4.look_at(camera_position, UFO_pos, vec3(0, 1, 0));
-                program_state.set_camera(desired_camera_matrix);
+
+                if (UFO_pos[2] < -2.25 && !this.frozen) {
+                    this.frozen = true;
+                    this.frozen_camera = desired_camera_matrix;
+                }
+                if (this.frozen) {
+                    program_state.set_camera(this.frozen_camera);
+                }
+                else {
+                    program_state.set_camera(desired_camera_matrix);
+                }
             }
         }
     }
