@@ -245,6 +245,8 @@ export class SpaceRacer extends Scene {
         this.offTrack_count = 0; //Number of times offTrack value changes
         this.third_person = false;  // Flag for third-person camera mode
         this.angle_of_rotation = 0; // Track the UFO's angle of rotation
+        this.frozen = false;
+        this.frozen_camera = Mat4.look_at(vec3(0, 0, 150), vec3(0, 0, 0), vec3(0, 1, 0));
         this.score = 0;
         // Timer power-ups
         this.inner_radius = 70; // Inner radius of the ring
@@ -387,7 +389,7 @@ export class SpaceRacer extends Scene {
 
         }
     }
-    
+
     check_if_colliding(UFO_pos) {
         // const T = UFO_inverse_transform.times(obstacle_transform);
         // const {intersect_test, points, leeway} = collider;
@@ -399,9 +401,9 @@ export class SpaceRacer extends Scene {
         const collision_threshold = 3;
         for(let i = 0; i < this.obstacles.length; i++){
             const obs_pos = this.obstacles[i].position;
-            const distance = Math.sqrt((UFO_pos[0] - obs_pos[0])**2 + 
-                                        (UFO_pos[1] - obs_pos[1])**2 +
-                                         (UFO_pos[2] - obs_pos[2])**2 );
+            const distance = Math.sqrt((UFO_pos[0] - obs_pos[0])**2 +
+                (UFO_pos[1] - obs_pos[1])**2 +
+                (UFO_pos[2] - obs_pos[2])**2 );
             if(distance < collision_threshold){
                 //Reverse the direction of obstacle when collided
                 this.obstacles[i].direction = - this.obstacles[i].direction;
@@ -422,13 +424,13 @@ export class SpaceRacer extends Scene {
     check_offTrack(UFO_pos){
         let distance = Math.sqrt(UFO_pos[0]**2 + UFO_pos[1]**2);
         // console.log(distance);
-        if(distance < (this.inner_radius - 10 ) || distance > (this.outer_radius + 15)){
+        if(distance < (this.inner_radius - 10 ) || distance > (this.outer_radius + 15)|| UFO_pos[2] < 0){
             return true;
         }
         return false;
     }
 
-    
+
     make_control_panel() {
         this.key_triggered_button("Move Forward", ["ArrowUp"], () => this.key_states.ArrowUp = true, undefined, () => this.key_states.ArrowUp = false);
         this.key_triggered_button("Move Backward", ["ArrowDown"], () => this.key_states.ArrowDown = true, undefined, () => this.key_states.ArrowDown = false);
@@ -449,25 +451,25 @@ export class SpaceRacer extends Scene {
             this.children.push(context.scratchpad.controls = new defs.Movement_Controls());
             program_state.set_camera(this.initial_camera_location);
         }
-    
+
         program_state.projection_transform = Mat4.perspective(Math.PI / 4, context.width / context.height, .1, 1000);
         let desired_camera_matrix = this.initial_camera_location;
     
         const t = program_state.animation_time / 1000, dt = program_state.animation_delta_time / 1000;
         let model_transform = Mat4.identity();
         let sun_transform = model_transform;
-    
+
         var sun_radius = 45;
         sun_transform = sun_transform.times(Mat4.scale(sun_radius, sun_radius, sun_radius));
         var sun_color = color(1, 0.95, 0, 1);
-    
+
         let disk_transform = model_transform;
         disk_transform = disk_transform.times(Mat4.scale(10, 10, 0.5));
-    
+
         // Update car transformation based on key states
-        if (this.key_states.ArrowUp) {
+        if (this.key_states.ArrowUp && !this.frozen) {
             this.velocity = Math.min(this.max_speed, this.velocity + this.acceleration);
-        } else if (this.key_states.ArrowDown) {
+        } else if (this.key_states.ArrowDown && !this.frozen) {
             this.velocity = Math.max(-(this.max_speed), this.velocity - this.acceleration);
         } else {
             if (this.velocity > 0) {
@@ -476,29 +478,29 @@ export class SpaceRacer extends Scene {
                 this.velocity = Math.min(0, this.velocity + this.deceleration);
             }
         }
-    
+
         // Move the car
         const angle_to_rotate = 0.075;
         if (this.velocity !== 0) {
             this.UFO_transform.post_multiply(Mat4.translation(0, 0, -this.velocity));
-            if (this.key_states.ArrowLeft) {
+            if (this.key_states.ArrowLeft && !(this.frozen)) {
                 this.angle_of_rotation -= angle_to_rotate; // Update angle of rotation
                 this.UFO_transform.post_multiply(Mat4.rotation(angle_to_rotate, 0, 1, 0)); // Reduced rotation amount
             }
-            if (this.key_states.ArrowRight) {
+            if (this.key_states.ArrowRight && !(this.frozen)) {
                 this.angle_of_rotation += angle_to_rotate; // Update angle of rotation
                 this.UFO_transform.post_multiply(Mat4.rotation(-(angle_to_rotate), 0, 1, 0)); // Reduced rotation amount
             }
         }
-    
+
         // Apply self-rotation to the UFO
         let self_rotating_UFO_transform = this.UFO_transform.times(Mat4.rotation(t, 0, 1, 0)); // Rotate around the Y axis
-    
+
         const light_position = vec4(0, 0, 0, 1);
         program_state.lights = [new Light(light_position, sun_color, 150 ** sun_radius)];
         this.shapes.sun.draw(context, program_state, sun_transform, this.materials.sun.override({color: sun_color}));
         this.shapes.disk.draw(context, program_state, disk_transform, this.materials.disk);
-    
+
         // Draw the active timer power-ups
         for (let i = 0; i < this.timer_positions.length; i++) {
             if (this.timer_active[i]) {
@@ -506,7 +508,7 @@ export class SpaceRacer extends Scene {
                 this.shapes.timer.draw(context, program_state, timer_transform, this.materials.timer);
             }
         }
-    
+
         // Draw the active coins
         for (let i = 0; i < this.coin_positions.length; i++) {
             if (this.coin_active[i]) {
@@ -516,15 +518,15 @@ export class SpaceRacer extends Scene {
                 this.shapes.coin.draw(context, program_state, coin_transform, this.materials.coin);
             }
         }
-        
+
         for (let i = 0; i < this.obstacles.length; i++) {
             let angle = Math.atan2(this.obstacles[i].position[1],this.obstacles[i].position[0]);
             let current_distance = Math.sqrt(this.obstacles[i].position[0]**2 +this.obstacles[i].position[1]**2);
-    
+
             let new_distance = current_distance +this.obstacles[i].direction *this.obstacles[i].speed;
             let o_r = this.outer_radius + 10
             let i_r = this.inner_radius - 10
-    
+
             // Check boundary conditions with a buffer zone to prevent jitter
             if (new_distance > o_r) {
                 new_distance = o_r - 0.1; // Stop slightly before the boundary
@@ -533,26 +535,26 @@ export class SpaceRacer extends Scene {
                 new_distance = i_r + 0.1; // Stop slightly after the boundary
                 this.obstacles[i].direction = 1; // Reverse direction
             }
-    
+
             this.obstacles[i].position[0] = new_distance * Math.cos(angle);
             this.obstacles[i].position[1] = new_distance * Math.sin(angle);
-    
+
             // Self-rotation transformation
             let obs_transform = Mat4.translation(...this.obstacles[i].position);
             obs_transform = obs_transform.times(Mat4.rotation(t, 0, 1, 0)); // Rotate around the Y axis
-    
+
             this.shapes.obstacle.draw(context, program_state, obs_transform, this.materials.obstacle);
         }
         this.shapes.UFO.draw(context, program_state, self_rotating_UFO_transform, this.materials.UFO); // Use self-rotating transform
-    
+
         // Check for collisions
         const UFO_pos = self_rotating_UFO_transform.times(vec4(0, 0, 0, 1)).to3();
         this.check_collisions(UFO_pos);
         this.check_if_colliding(UFO_pos);
-       
+
         //Check the value of offTrack variable
         if(this.check_offTrack(UFO_pos)){
-            this.UFO_transform = this.UFO_transform.post_multiply(Mat4.translation(0, -t/2, 0));
+            this.UFO_transform = this.UFO_transform.post_multiply(Mat4.translation(0, -0.5, 0));
         }
         // Update the timer
         if (this.last_time === 0) {
