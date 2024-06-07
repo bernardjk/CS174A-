@@ -193,7 +193,7 @@ export class SpaceRacer extends Scene {
         this.UFO_transform = Mat4.identity().times(Mat4.translation(80, 0, 2)).times(Mat4.rotation(Math.PI / 2, Math.PI / 2, 0, 0)).times(Mat4.scale(0.5, 0.5, 0.5));
         this.key_states = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
         this.velocity = 0;
-        this.collided = false; //Flag for collision with asteroids
+        this.collided_count = 0; //Keep track of number of collisions
         this.offTrack = false; //Flag for being off the track
         this.prev_offTrack_value = this.offTrack;
         this.curr_offTrack_value = this.offTrack;
@@ -342,11 +342,21 @@ export class SpaceRacer extends Scene {
                                         (UFO_pos[1] - obs_pos[1])**2 +
                                          (UFO_pos[2] - obs_pos[2])**2 );
             if(distance < collision_threshold){
-                return true;
+                //Reverse the direction of obstacle when collided
+                this.obstacles[i].direction = - this.obstacles[i].direction;
+                //Reverse direction of UFO when it moves
+                if(this.velocity != 0){
+                    this.velocity = - this.velocity;
+                }
+                //When it stay stills, it bounces back a little
+                else{
+                    this.velocity = - 8*this.obstacles[i].speed;
+                }
+                //Might use this variable to determine if a player loses
+                this.collided_count ++;
             }
 
         }
-        return false;
     }
     check_offTrack(UFO_pos){
         let distance = Math.sqrt(UFO_pos[0]**2 + UFO_pos[1]**2);
@@ -476,9 +486,8 @@ export class SpaceRacer extends Scene {
         // Check for collisions
         const UFO_pos = self_rotating_UFO_transform.times(vec4(0, 0, 0, 1)).to3();
         this.check_collisions(UFO_pos);
-        if(this.check_if_colliding(UFO_pos)){
-            console.log("collided");
-        }
+        this.check_if_colliding(UFO_pos);
+       
         //Check the value of offTrack variable
         if(this.check_offTrack(UFO_pos)){
             this.UFO_transform = this.UFO_transform.post_multiply(Mat4.translation(0, -t/2, 0));
