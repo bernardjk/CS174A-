@@ -200,7 +200,7 @@ export class SpaceRacer extends Scene {
         this.offTrack_count = 0; //Number of times offTrack value changes
         this.third_person = false;  // Flag for third-person camera mode
         this.angle_of_rotation = 0; // Track the UFO's angle of rotation
-
+        this.score = 0;
         // Timer power-ups
         this.inner_radius = 70; // Inner radius of the ring
         this.outer_radius = 85; // Outer radius of the ring
@@ -233,8 +233,20 @@ export class SpaceRacer extends Scene {
         this.timer_canvas.style.border = '2px solid black'; // Add a black border
         document.body.appendChild(this.timer_canvas);
         this.timer_ctx = this.timer_canvas.getContext('2d');
+         //Create a canvas for score
+         this.score_canvas = document.createElement('canvas');
+         this.score_canvas.width = 100;
+         this.score_canvas.height = 100;
+         this.score_canvas.style.position = 'absolute';
+         this.score_canvas.style.top = '20px';
+         this.score_canvas.style.left = '148px'; // Move the canvas 20px more to the left
+         this.score_canvas.style.border = '2px solid black'; // Add a black border
+         document.body.appendChild(this.score_canvas);
+         this.score_ctx = this.score_canvas.getContext('2d');
         this.obstacles = [];
         this.generate_obs_positions();
+       
+        
     }
 
     generate_obs_positions() {
@@ -322,8 +334,12 @@ export class SpaceRacer extends Scene {
                     this.max_speed += 0.12; // Increase max speed
                     this.acceleration += 0.0025;
                     this.deceleration += 0.0025;
+                    this.score ++;
                 }
             }
+        }
+        if(this.timer_seconds == 0 || this.offTrack){
+
         }
     }
     
@@ -508,6 +524,13 @@ export class SpaceRacer extends Scene {
         this.timer_ctx.font = "30px Arial";
         this.timer_ctx.fillStyle = "red";
         this.timer_ctx.fillText(this.timer_seconds.toString(), 32, 60);
+        //Dispay the scoreboard
+        this.score_ctx.clearRect(0, 0, this.score_canvas.width, this.score_canvas.height);
+        this.score_ctx.fillStyle = "white";
+        this.score_ctx.fillRect(0, 0, this.score_canvas.width, this.score_canvas.height);
+        this.score_ctx.font = "30px Arial";
+        this.score_ctx.fillStyle = "red";
+        this.score_ctx.fillText(this.score.toString(), 32, 60);
     
         // Camera logic for third-person and top-down perspective
         const UFO_height = 150; // Fixed height for top-down view
