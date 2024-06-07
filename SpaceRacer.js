@@ -242,7 +242,6 @@ export class SpaceRacer extends Scene {
         this.offTrack = false; //Flag for being off the track
         this.prev_offTrack_value = this.offTrack;
         this.curr_offTrack_value = this.offTrack;
-        this.offTrack_count = 0; //Number of times offTrack value changes
         this.third_person = false;  // Flag for third-person camera mode
         this.angle_of_rotation = 0; // Track the UFO's angle of rotation
         this.frozen = false;
@@ -260,8 +259,10 @@ export class SpaceRacer extends Scene {
 
         // Coins
         this.coin_positions = [];
-        this.coin_active = new Array(5).fill(true); // Array to track active coins
+        this.coin_active = new Array(18).fill(false); // Array to track active coins
+        this.coin_count = 0;
         this.generate_coin_positions(); // Generate the positions on the ring
+        this.spawn_coins();
         this.max_speed = 1.0;
         this.acceleration = 0.02;
         this.deceleration = 0.02;
@@ -322,7 +323,7 @@ export class SpaceRacer extends Scene {
     }
 
     generate_coin_positions() {
-        const num_coins = 5;
+        const num_coins = 18;
         const angle_increment = 2 * Math.PI / num_coins;
 
         for (let i = 0; i < num_coins; i++) {
@@ -331,6 +332,15 @@ export class SpaceRacer extends Scene {
             const x = distance * Math.cos(angle);
             const y = distance * Math.sin(angle);
             this.coin_positions.push(vec3(x, y, 2)); // Assuming z = 0 for simplicity
+        }
+    }
+    spawn_coins(){
+        while (this.coin_count < 5) {
+            const index = Math.floor(Math.random() * 18); // Ensure index is between 0 and 11
+            if (!this.coin_active[index]) {
+                this.coin_active[index] = true;
+                this.coin_count++;
+            }
         }
     }
 
@@ -378,15 +388,14 @@ export class SpaceRacer extends Scene {
                 if (distance < collision_threshold) {
                     console.log(`Collision detected with coin at index ${i}`);
                     this.coin_active[i] = false; // Deactivate the coin
+                    this.coin_count -= 1;
                     this.max_speed += 0.12; // Increase max speed
                     this.acceleration += 0.0025;
                     this.deceleration += 0.0025;
                     this.score ++;
+                    this.spawn_coins();
                 }
             }
-        }
-        if(this.timer_seconds == 0 || this.offTrack){
-
         }
     }
 
@@ -553,9 +562,6 @@ export class SpaceRacer extends Scene {
         this.check_if_colliding(UFO_pos);
 
         //Check the value of offTrack variable
-        if(this.check_offTrack(UFO_pos)){
-            this.UFO_transform = this.UFO_transform.post_multiply(Mat4.translation(0, -0.5, 0));
-        }
         // Update the timer
         if (this.last_time === 0) {
             this.last_time = t;
@@ -563,6 +569,9 @@ export class SpaceRacer extends Scene {
         if (t - this.last_time >= 1) {
             this.timer_seconds--;
             this.last_time = t;
+        }
+        if(this.check_offTrack(UFO_pos) || this.timer_seconds <= 0){
+            this.UFO_transform = this.UFO_transform.post_multiply(Mat4.translation(0, -0.5, 0));
         }
         this.shapes.text.set_string('Game over!', context.context);
         this.shapes.text.draw(context,program_state,
